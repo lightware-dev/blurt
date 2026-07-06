@@ -109,3 +109,38 @@ Checked 2026-07-06. "Voice space" = any existing dictation/STT product.
 | Parley | softer fit ("negotiation"); domains tight |
 | Sotto | ❌ npm `sotto` is a *live* "voice input for Claude Code" (2026) |
 | Utter | ❌ homophone of Otter.ai; handles taken |
+
+## Website (`www/`)
+
+The original brief that produced the marketing site — keep it as the north star
+for future edits:
+
+- **Stack:** Next.js (App Router) + Tailwind, deployed to Cloudflare. Mirror
+  `../chronicle/www` exactly (Next 16 + Tailwind v4 + OpenNext → Cloudflare
+  Workers; `opennextjs-cloudflare build && deploy`). Worker name `blurt`; target
+  domain `blurtvoice.com`.
+- **Design brief:** fun and witty. **Draw on how crowded the space already is —
+  lean into "yet another" dictation app.** Creative, unusual, deliberately *not*
+  another AI-generated slop page that looks like every other site.
+- **How that was executed** (the current site): a "brutalist dictation HUD" —
+  near-black ink, warm bone text, one loud highlighter-yellow accent, display +
+  mono type mix (Space Grotesk / JetBrains Mono / Inter). Centerpiece is
+  `components/BlurtDemo.tsx`: a live typewriter that blurts a messy, disfluent
+  sentence then snaps it to clean text — the "say it badly, get it typed well"
+  promise made visual. Struck-through Whisper-clone list + naming wink own the
+  crowded-field angle. Tone is self-aware, anti-corporate ("not a startup, not
+  hiring, not raising").
+
+### Running / deploying the site
+
+```bash
+cd www
+npm install
+npm run dev -- -H 0.0.0.0 -p 3300   # remote-reachable dev (localhost:3000 is taken)
+npm run preview                      # Cloudflare Workers runtime preview
+npm run deploy                       # build + wrangler deploy
+```
+
+Note: on `localhost`, the `preview`/`deploy` step needs the `workerd` + `esbuild`
+postinstall binaries, which the box's `allow-scripts` guard blocks on a plain
+`npm install` — approve those scripts before the Workers runtime will run.
