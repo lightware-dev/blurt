@@ -9,7 +9,16 @@ silence run-lengths, so the session layer can decide when an utterance has ended
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
+
+# Silero VAD's LSTM weights aren't stored contiguously; torch warns about a minor
+# recompaction cost on every call. Cosmetic for a model this tiny — silence it.
+warnings.filterwarnings(
+    "ignore",
+    message=r".*RNN module weights are not part of single contiguous chunk.*",
+)
 
 SAMPLE_RATE = 16000
 WINDOW = 512  # Silero expects 512-sample (32 ms) windows at 16 kHz
