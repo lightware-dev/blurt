@@ -1,0 +1,171 @@
+name: Build macOS app
+
+# Builds Blurt in release configuration and publishes the .app as a downloadable zip.
+# When the Developer ID + notary secrets are present (push to main / tag / manual run) the
+# build is signed + notarized + stapled; otherwise (PRs, forks) it falls back to an ad-hoc
+# signature so the build still verifies. Pushing a `v*` tag additionally publishes a GitHub
+# Release with the zip attached.
+#
+# Path-filtered to `client-mac/**` so it doesn't burn (10x-priced) macOS runner minutes on
+# server/www-only pushes. NOTE: path filters are ignored for tag pushes, so `v*` tags always
+# run — exactly what we want for cutting a release.
+on:
+    push:
+        branches:
+            - main
+        tags:
+            - 'v*'
+        paths:
+            - 'client-mac/**'
+            - '.github/workflows/mac.yml'
+    pull_request:
+        paths:
+            - 'client-mac/**'
+            - '.github/workflows/mac.yml'
+    workflow_dispatch:
+
+jobs:
+    build-mac:
+        runs-on: macos-15
+        name: Build & package Blurt (release)
+        permissions:
+            contents: write # needed to publish a GitHub Release on tag pushes
+        steps:
+            - name: checkout
+              uses: actions/checkout@v4
+
+            - name: select latest stable Xcode
+              uses: maxim-lobanov/setup-xcode@v1
+              with:
+                  xcode-version: latest-stable
+
+            - name: toolchain versions
+              run: |
+                  swift --version
+                  xcodebuild -version
+
+            # Signed+notarized only when secrets exist AND this isn't a PR (notarization is
+            # slow + hits Apple's service, so PRs just do an ad-hoc build to verify it compiles).
+            - name: determine build mode
+              id: cfg
+              env:
+                  P12: ${{ secrets.DEVID_CERT_P12_BASE64 }}
+              run: |
+                  set -euo pipefail
+                  if [ -n "$P12" ] && [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+                      echo "signed=true" >> "$GITHUB_OUTPUT"
+                      echo "Developer ID secrets present -> signed + notarized build"
+                  else
+                      echo "signed=false" >> "$GITHUB_OUTPUT"
+                      echo "No secrets or PR build -> ad-hoc signature"
+                  fi
+                  if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+                      echo "release=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "release=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            # Fail fast: never publish an un-notarized build as a Release, and keep the tag in
+            # lockstep with the bundle version so the zip name matches the release.
+            - name: guard release preconditions
+              if: steps.cfg.outputs.release == 'true'
+              run: |
+                  set -euo pipefail
+                  if [ "${{ steps.cfg.outputs.signed }}" != "true" ]; then
+                      echo "::error::Release tag pushed but signing secrets are missing — refusing to publish an un-notarized build." >&2
+                      exit 1
+                  fi
+                  VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' client-mac/Info.plist)"
+                  if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+                      echo "::error::Tag $GITHUB_REF_NAME does not match bundle version v$VERSION (set CFBundleShortVersionString in client-mac/Info.plist)." >&2
+                      exit 1
+                  fi
+
+            # ---- signed + notarized path ----
+            - name: import Developer ID certificate
+              if: steps.cfg.outputs.signed == 'true'
+              id: cert
+              env:
+                  P12_BASE64: ${{ secrets.DEVID_CERT_P12_BASE64 }}
+                  P12_PASSWORD: ${{ secrets.DEVID_CERT_PASSWORD }}
+                  KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+              run: |
+                  set -euo pipefail
+                  KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+                  security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+                  security set-keychain-settings -lut 3600 "$KEYCHAIN"
+                  security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+                  printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/devid.p12"
+                  security import "$RUNNER_TEMP/devid.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+                  # Allow codesign to use the key non-interactively.
+                  security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+                  # Prepend our keychain to the search list so codesign finds the identity.
+                  security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+                  IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+                  echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+                  rm -f "$RUNNER_TEMP/devid.p12"
+
+            - name: write notary API key
+              if: steps.cfg.outputs.signed == 'true'
+              env:
+                  P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+              run: printf '%s' "$P8_BASE64" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+
+            - name: build, sign, notarize, staple
+              if: steps.cfg.outputs.signed == 'true'
+              working-directory: client-mac
+              env:
+                  SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
+                  NOTARY_KEY: ${{ runner.temp }}/notary.p8
+                  NOTARY_KEY_ID: ${{ vars.NOTARY_KEY_ID }}
+                  NOTARY_ISSUER: ${{ vars.NOTARY_ISSUER_ID }}
+              run: ./notarize.sh
+
+            # ---- ad-hoc fallback (no secrets / PR) ----
+            - name: build (ad-hoc)
+              if: steps.cfg.outputs.signed == 'false'
+              working-directory: client-mac
+              run: |
+                  set -euo pipefail
+                  ./build-app.sh
+                  VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Blurt.app/Contents/Info.plist)"
+                  mkdir -p dist
+                  ditto -c -k --keepParent Blurt.app "dist/Blurt-${VERSION}.zip"
+
+            # ---- common: resolve + upload ----
+            - name: resolve artifact
+              id: artifact
+              run: |
+                  set -euo pipefail
+                  ZIP="$(ls client-mac/dist/*.zip | head -1)"
+                  echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+                  echo "name=$(basename "${ZIP%.zip}")-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+            - name: clean up signing keychain
+              if: always() && steps.cfg.outputs.signed == 'true'
+              run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+            - name: upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ steps.artifact.outputs.name }}
+                  path: ${{ steps.artifact.outputs.zip }}
+                  if-no-files-found: error
+                  retention-days: 30
+
+            # ---- release: attach the notarized zip to a GitHub Release ----
+            - name: publish GitHub Release
+              if: steps.cfg.outputs.release == 'true'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  set -euo pipefail
+                  ZIP="${{ steps.artifact.outputs.zip }}"
+                  # A stable, version-less copy so the website can link a fixed URL:
+                  #   https://github.com/${{ github.repository }}/releases/latest/download/Blurt-macOS.zip
+                  cp "$ZIP" "client-mac/dist/Blurt-macOS.zip"
+                  gh release create "$GITHUB_REF_NAME" \
+                      "$ZIP" "client-mac/dist/Blurt-macOS.zip" \
+                      --repo "$GITHUB_REPOSITORY" \
+                      --title "Blurt $GITHUB_REF_NAME" \
+                      --generate-notes
