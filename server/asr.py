@@ -68,6 +68,7 @@ class ParakeetASR:
         self.dtype = next(model.parameters()).dtype
         self._model = model
         self._torch = torch
+        _quiet_nemo_transcribe_warning()
         print(f"[asr] ready in {time.time()-t0:.1f}s (dtype={self.dtype})", flush=True)
         return model
 
@@ -93,6 +94,25 @@ class ParakeetASR:
         """
         if self._torch is not None and self._torch.cuda.is_available():
             self._torch.cuda.empty_cache()
+
+
+def _quiet_nemo_transcribe_warning():
+    """Drop NeMo's per-call `_transcribe_output_processing is deprecated` notice.
+
+    NeMo forces its logger to WARNING for the duration of every transcribe()
+    call (asr .../transcription.py), so raising the level can't suppress it.
+    A logging filter on the underlying logger drops just this record, at any
+    level, leaving genuine warnings intact.
+    """
+    import logging as pylog
+
+    class _DropDeprecation(pylog.Filter):
+        def filter(self, record):
+            return "_transcribe_output_processing" not in record.getMessage()
+
+    logger = pylog.getLogger("nemo_logger")
+    if not any(isinstance(f, _DropDeprecation) for f in logger.filters):
+        logger.addFilter(_DropDeprecation())
 
 
 def _extract_text(result) -> str:
