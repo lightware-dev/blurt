@@ -14,10 +14,34 @@ open Blurt.app
 ```
 
 `build-app.sh` compiles with `swift build -c release --arch arm64 --arch x86_64`,
-bundles the binary with `Info.plist`, and ad-hoc-signs it. `lipo -info` at the end
-confirms both architectures.
+bundles the binary with `Info.plist`, and signs it. If the **Developer ID
+Application** cert (Lightware) is in the keychain it signs with that plus a
+hardened runtime, secure timestamp, and the mic entitlement; otherwise it falls
+back to an ad-hoc signature for local use. `lipo -info` at the end confirms both
+architectures.
 
 For dev iteration you can also just `swift run` (single-arch, current machine).
+
+## Notarized distribution
+
+For a build that runs on **any** Mac (not just this one) it must be Developer
+ID-signed, notarized, and stapled. `notarize.sh` does the whole chain — build →
+sign → submit to Apple → staple → verify — and drops a distributable zip in
+`dist/`.
+
+```bash
+# One-time: save notary credentials (App Store Connect API key) to the keychain.
+xcrun notarytool store-credentials blurt-notary \
+  --key /path/AuthKey_XXXX.p8 --key-id <KEY_ID> --issuer <ISSUER_ID>
+
+# Then, any time:
+NOTARY_PROFILE=blurt-notary ./notarize.sh   # → dist/Blurt-<version>.zip
+```
+
+The App Store Connect key is team-wide (Lightware, `42WB54FVW9`), and the `.p8`
+can't be re-downloaded — keep it in a password manager. Credentials can be a
+saved `NOTARY_PROFILE`, or `NOTARY_KEY` + `NOTARY_KEY_ID` + `NOTARY_ISSUER`.
+Override the signing identity with `SIGN_IDENTITY=...`.
 
 ## First run
 

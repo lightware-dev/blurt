@@ -21,8 +21,19 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILT" "$APP/Contents/MacOS/$BIN"
 cp Info.plist "$APP/Contents/Info.plist"
 
-echo "▶ ad-hoc signing (personal use)…"
-codesign --force --deep --sign - "$APP"
+# Sign with Developer ID (for distribution/notarization) when the cert is
+# present; otherwise fall back to an ad-hoc signature for local personal use.
+# Override the identity with SIGN_IDENTITY=... ./build-app.sh
+SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Lightware Consulting, Lda (42WB54FVW9)}"
+if security find-identity -v -p codesigning | grep -qF "$SIGN_IDENTITY"; then
+    echo "▶ signing with Developer ID + hardened runtime…"
+    codesign --force --options runtime --timestamp \
+        --entitlements Blurt.entitlements \
+        --sign "$SIGN_IDENTITY" "$APP"
+else
+    echo "▶ Developer ID cert not found — ad-hoc signing (personal use)…"
+    codesign --force --deep --sign - "$APP"
+fi
 
 echo "✓ done"
 lipo -info "$APP/Contents/MacOS/$BIN"

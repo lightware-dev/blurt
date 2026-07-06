@@ -12,7 +12,14 @@ certs/
 # Swift / macOS build artifacts
 client-mac/.build/
 client-mac/Blurt.app/
+client-mac/dist/
 .DS_Store
+
+# Signing material must never be committed — keep it in a password manager.
+*.p12
+*.p8
+*.cer
+*.certSigningRequest
 
 # Model / HF caches (if ever placed in-tree)
 *.nemo
