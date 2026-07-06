@@ -11,6 +11,7 @@ const RIVALS = [
     'Whispur',
     'Overwhisper',
     'Whisperstream',
+    'Whispering',
     'WhisperTyping',
     'Weesper',
     'Willow',
