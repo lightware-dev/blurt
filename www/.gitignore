@@ -4,6 +4,7 @@
 # next
 /.next
 /out
+next-env.d.ts
 
 # opennext / cloudflare
 /.open-next
