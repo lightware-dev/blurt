@@ -84,7 +84,7 @@ Checked 2026-07-06. "Voice space" = any existing dictation/STT product.
 | npm `blurt` | ⚠️ taken | dead fire-and-forget messaging lib, last publish 2017 — unrelated |
 | npm **`blurtd`** | ✅ FREE | ideal for the server/daemon package |
 | PyPI `blurt` / `blurtd` | ✅ FREE | both open |
-| **`blurtvoice.com`** | ✅ FREE | **recommended primary domain** |
+| **`blurtvoice.com`** | ✅ REGISTERED | **primary domain (owned)** |
 | `blurtvoice.app` | ✅ FREE | good secondary |
 | `blurtdictation.com` | ✅ FREE | descriptive fallback |
 | `blurt.app` | ⚠️ taken | |
@@ -97,8 +97,8 @@ Checked 2026-07-06. "Voice space" = any existing dictation/STT product.
 - **Repo:** `<you>/blurt`
 - **Server package (if ever published):** `blurtd` (npm + PyPI both free) —
   "the blurt daemon" is also just a funny sentence
-- **Domain:** **blurtvoice.com** (primary), blurtvoice.app / blurtdictation.com
-  (secondary)
+- **Domain:** **blurtvoice.com** (primary, registered), blurtvoice.app /
+  blurtdictation.com (available as secondary)
 
 ### For reference — the shortlist Blurt beat
 
