@@ -23,7 +23,7 @@ const REJECTED = ['Trill', 'Loqui', 'Parley', 'Sotto', 'Utter']
 
 const STATS = [
     { big: '~80ms', small: 'to transcribe a 35-second clip' },
-    { big: '1.4 GB', small: 'VRAM. your GPU won’t notice.' },
+    { big: '~2.3 GB', small: 'VRAM. your GPU won’t notice.' },
     { big: '0 bytes', small: 'leave your network' },
     { big: '$0/mo', small: 'forever. it’s just code.' },
     { big: '25', small: 'languages (incl. 🇬🇧 + 🇵🇹)' },

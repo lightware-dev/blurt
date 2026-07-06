@@ -7,7 +7,7 @@ cleans it up into the field you're already in. Your voice never leaves your LAN.
 Two parts:
 
 - **`server/`** — a lean NVIDIA **Parakeet** streaming ASR server (Python + NeMo)
-  that runs on this Linux box's RTX 5090. Minimal VRAM (~1.5 GB, bf16), low WER,
+  that runs on this Linux box's RTX 5090. Modest VRAM (~2.3 GB, bf16), low WER,
   near-realtime live partials over a WebSocket.
 - **`client-mac/`** — a native **macOS menu-bar app** (Swift, universal
   arm64 + x86_64). A global hotkey toggles dictation; live text shows in a HUD;
@@ -25,7 +25,9 @@ Two parts:
 
 - **Model:** `parakeet-tdt-0.6b-v3` — multilingual (English + Portuguese + 23 more),
   tops the ASR accuracy leaderboard, only ~0.6B params. On the 5090 it decodes at
-  **RTF ~0.002–0.01** (a 35 s clip in ~80 ms) using **~1.4 GB VRAM**.
+  **RTF ~0.002–0.01** (a 35 s clip in ~70 ms) using **~2.3 GB VRAM** (bf16,
+  measured via `nvidia-smi`; ~1.4 GB of that is live tensors, the rest CUDA
+  context + reserved pools).
 - **VAD-segmented streaming:** audio is split into utterances at silences (Silero
   VAD). Each active segment is re-decoded every ~350 ms for live partials and
   committed on a pause. VRAM is bounded by the *longest single utterance*, not the
