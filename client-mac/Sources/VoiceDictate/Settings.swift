@@ -6,7 +6,7 @@ enum Settings {
     private static let d = UserDefaults.standard
 
     static var serverURL: String {
-        get { d.string(forKey: "serverURL") ?? "wss://127.0.0.1:7860/ws" }
+        get { d.string(forKey: "serverURL") ?? "wss://localhost:7860/ws" }
         set { d.set(newValue, forKey: "serverURL") }
     }
 
