@@ -72,6 +72,21 @@ python scripts/verify_asr.py                         # offline decode + VRAM/RTF
 
 ## Mac client
 
+### Download
+
+Grab the latest signed + notarized build from the
+[**Releases page**](https://github.com/lightware-dev/blurt/releases/latest), or link
+straight to the stable URL:
+
+```
+https://github.com/lightware-dev/blurt/releases/latest/download/Blurt-macOS.zip
+```
+
+Unzip, drag **Blurt.app** to `/Applications`, and open it — it's a universal
+(Apple Silicon + Intel) menu-bar app that launches without Gatekeeper warnings.
+
+### Build from source
+
 Built on the Mac (needs Xcode command-line tools):
 
 ```bash
