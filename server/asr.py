@@ -1,0 +1,103 @@
+"""
+Parakeet ASR engine — a thin, fast wrapper around NVIDIA NeMo's
+parakeet-tdt-0.6b-v3 model for in-memory streaming decode.
+
+Design goals: minimal VRAM (bf16, ~1.5-2 GB), low WER (full-context decode of
+each speech segment), and no per-call disk I/O (we feed numpy arrays straight to
+the model instead of writing a temp wav every tick like a naive prototype).
+"""
+
+from __future__ import annotations
+
+import os
+import time
+import threading
+
+import numpy as np
+
+SAMPLE_RATE = 16000
+
+# NeMo 2.1 still references np.sctypes, which NumPy 2.0 removed. Restore it so the
+# ASR featurizer can convert int PCM to float. Harmless no-op on NumPy < 2.
+if not hasattr(np, "sctypes"):
+    np.sctypes = {
+        "int": [np.int8, np.int16, np.int32, np.int64],
+        "uint": [np.uint8, np.uint16, np.uint32, np.uint64],
+        "float": [np.float16, np.float32, np.float64, np.longdouble],
+        "complex": [np.complex64, np.complex128, np.clongdouble],
+        "others": [bool, object, bytes, str, np.void],
+    }
+
+from server.models import resolve as resolve_model
+
+DEFAULT_MODEL = resolve_model(os.getenv("PARAKEET_MODEL"))
+
+
+class ParakeetASR:
+    """Loads the model once and serialises decode calls behind a lock.
+
+    NeMo transcribe is synchronous and not thread-safe for concurrent calls on
+    one model instance, so a single lock guards it. Callers should run
+    `transcribe` in a worker thread (asyncio.to_thread) to keep the event loop
+    free.
+    """
+
+    def __init__(self, model_name: str | None = None, fp32: bool | None = None):
+        self.model_name = resolve_model(model_name) if model_name else DEFAULT_MODEL
+        self.fp32 = (os.getenv("PARAKEET_FP32") == "1") if fp32 is None else fp32
+        self._model = None
+        self._lock = threading.Lock()
+        self.dtype = None
+        self._torch = None
+
+    def load(self):
+        if self._model is not None:
+            return self._model
+        import torch
+        import nemo.collections.asr as nemo_asr
+
+        t0 = time.time()
+        print(f"[asr] loading {self.model_name} ...", flush=True)
+        model = nemo_asr.models.ASRModel.from_pretrained(self.model_name)
+        model.eval()
+        if torch.cuda.is_available():
+            model.to("cuda")
+            # bf16 halves VRAM with output identical to fp32 for this model.
+            if not self.fp32 and torch.cuda.is_bf16_supported():
+                model.to(torch.bfloat16)
+        self.dtype = next(model.parameters()).dtype
+        self._model = model
+        self._torch = torch
+        print(f"[asr] ready in {time.time()-t0:.1f}s (dtype={self.dtype})", flush=True)
+        return model
+
+    def transcribe(self, audio_f32: np.ndarray) -> str:
+        """Decode a mono float32 16 kHz array to text. Returns '' for empty/silent input."""
+        if audio_f32 is None or len(audio_f32) == 0:
+            return ""
+        model = self.load()
+        audio = np.ascontiguousarray(audio_f32, dtype=np.float32)
+        with self._lock:
+            # inference_mode drops autograd bookkeeping — lower activation VRAM than
+            # no_grad. NeMo 2.x accepts a list of numpy arrays directly (no temp wav).
+            with self._torch.inference_mode():
+                result = model.transcribe([audio], batch_size=1, verbose=False)
+        return _extract_text(result)
+
+    def release_cache(self):
+        """Return cached CUDA blocks to the driver so peak VRAM doesn't stick.
+
+        Called after a long segment is committed: a big utterance can spike
+        activation memory; freeing it keeps steady-state VRAM near the model
+        weights (~1.5 GB) instead of the high-water mark.
+        """
+        if self._torch is not None and self._torch.cuda.is_available():
+            self._torch.cuda.empty_cache()
+
+
+def _extract_text(result) -> str:
+    """NeMo returns a list of Hypothesis|str, or a (best, all) tuple thereof."""
+    hyps = result[0] if isinstance(result, tuple) else result
+    item = hyps[0] if isinstance(hyps, (list, tuple)) else hyps
+    text = getattr(item, "text", None)
+    return (text if text is not None else str(item)).strip()

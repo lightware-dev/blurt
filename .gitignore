@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets / local config
+.env
+
+# Self-signed TLS (regenerate per machine: scripts/gen_certs.sh)
+certs/
+
+# Swift / macOS build artifacts
+client-mac/.build/
+client-mac/VoiceDictate.app/
+.DS_Store
+
+# Model / HF caches (if ever placed in-tree)
+*.nemo

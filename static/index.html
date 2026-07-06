@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Parakeet Dictation — test</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; background:#0e0f12; color:#e7e9ee;
+         display:flex; flex-direction:column; min-height:100vh; }
+  header { padding:16px 20px; border-bottom:1px solid #23262d; display:flex; align-items:center; gap:14px; }
+  h1 { font-size:16px; margin:0; font-weight:600; }
+  #dot { width:10px; height:10px; border-radius:50%; background:#555; }
+  #dot.rec{background:#ff4d4f; animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  main { flex:1; padding:22px; display:flex; flex-direction:column; gap:14px; }
+  button { font:600 15px system-ui; padding:12px 22px; border-radius:10px; border:0; cursor:pointer;
+           background:#3b82f6; color:#fff; }
+  button.rec { background:#ef4444; }
+  #out { flex:1; white-space:pre-wrap; font-size:20px; padding:18px; border-radius:12px;
+         background:#16181d; border:1px solid #23262d; min-height:200px; }
+  .partial { color:#9aa4b2; }
+  #status { font-size:13px; color:#7c8494; }
+</style>
+</head>
+<body>
+<header>
+  <span id="dot"></span>
+  <h1>🦜 Parakeet Dictation — mic test</h1>
+  <span id="status">idle</span>
+</header>
+<main>
+  <div><button id="btn">Start</button></div>
+  <div id="out"><span class="partial">Press Start and speak. Live partials appear as you talk; final text prints on Stop.</span></div>
+</main>
+<script>
+const btn = document.getElementById('btn');
+const out = document.getElementById('out');
+const statusEl = document.getElementById('status');
+const dot = document.getElementById('dot');
+let ws, ctx, node, stream, recording = false;
+
+function setStatus(s){ statusEl.textContent = s; }
+function escapeHtml(s){ return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+async function start(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = async () => {
+    ws.send(JSON.stringify({type:'start'}));
+    stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1, echoCancellation:true, noiseSuppression:true}});
+    ctx = new AudioContext();
+    await ctx.audioWorklet.addModule('/static/pcm-worklet.js');
+    const src = ctx.createMediaStreamSource(stream);
+    node = new AudioWorkletNode(ctx, 'pcm-worklet');
+    node.port.onmessage = (e) => { if (recording && ws.readyState === 1) ws.send(e.data); };
+    src.connect(node);
+    recording = true;
+    dot.className = 'rec'; setStatus('recording…');
+    btn.textContent = 'Stop'; btn.classList.add('rec');
+  };
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'status'){ setStatus(m.state + (m.detail ? ': '+m.detail : '')); }
+    else if (m.type === 'partial'){ out.innerHTML = escapeHtml(m.text) + ' <span class="partial">…</span>'; }
+    else if (m.type === 'final'){ out.textContent = m.text; setStatus('final'); }
+  };
+  ws.onclose = () => { setStatus('disconnected'); dot.className=''; };
+}
+
+function stop(){
+  recording = false;
+  btn.textContent = 'Start'; btn.classList.remove('rec');
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'stop'}));
+  if (node) node.disconnect();
+  if (stream) stream.getTracks().forEach(t=>t.stop());
+  if (ctx) ctx.close();
+}
+
+btn.onclick = () => recording ? stop() : start();
+</script>
+</body>
+</html>

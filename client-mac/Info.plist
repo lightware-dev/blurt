@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>VoiceDictate</string>
+    <key>CFBundleDisplayName</key>
+    <string>VoiceDictate</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.local.voicedictate</string>
+    <key>CFBundleExecutable</key>
+    <string>VoiceDictate</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <!-- Agent app: no Dock icon, lives in the menu bar only. -->
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>VoiceDictate streams your microphone to your local Parakeet server for transcription.</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>

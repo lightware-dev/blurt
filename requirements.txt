@@ -1,0 +1,11 @@
+# Parakeet dictation server (local, GPU). Install torch matching your CUDA first
+# (this machine: torch 2.12+cu130 for the RTX 5090 / sm_120).
+fastapi>=0.115.0
+uvicorn>=0.30.0
+websockets>=13.0
+nemo_toolkit[asr]>=2.0.0
+silero-vad>=5.1
+soundfile>=0.12.0
+librosa>=0.10.0
+numpy>=1.26.0
+python-dotenv>=1.0.0

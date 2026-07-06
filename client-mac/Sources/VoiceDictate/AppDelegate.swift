@@ -1,0 +1,170 @@
+import AppKit
+import AVFoundation
+import ApplicationServices
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem!
+    private var injectItem: NSMenuItem?
+    private var hotKey: HotKey?
+
+    private let audio = AudioCapture()
+    private let client = DictationClient()
+    private let hud = HUD()
+    private var recording = false
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        setupStatusItem()
+        wire()
+        setupHotKey()
+        requestPermissions()
+    }
+
+    // MARK: menu bar
+
+    private func setupStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        updateIcon()
+
+        let menu = NSMenu()
+        add(menu, "Toggle Dictation  (⌥Space)", #selector(toggle))
+        menu.addItem(.separator())
+        add(menu, "Set Server URL…", #selector(setServer))
+        add(menu, "Set Auth Token…", #selector(setToken))
+        let inject = NSMenuItem(title: "Insert via Typing (not Paste)",
+                                action: #selector(toggleInject), keyEquivalent: "")
+        inject.target = self
+        inject.state = Settings.injectMode == "type" ? .on : .off
+        injectItem = inject
+        menu.addItem(inject)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "Quit VoiceDictate", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.target = NSApp
+        menu.addItem(quit)
+        statusItem.menu = menu
+    }
+
+    private func add(_ menu: NSMenu, _ title: String, _ sel: Selector) {
+        let item = NSMenuItem(title: title, action: sel, keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+    }
+
+    private func updateIcon() {
+        guard let button = statusItem.button else { return }
+        let name = recording ? "mic.fill" : "mic"
+        button.image = NSImage(systemSymbolName: name, accessibilityDescription: "Dictate")
+        button.contentTintColor = recording ? .systemRed : nil
+    }
+
+    // MARK: wiring
+
+    private func wire() {
+        audio.onFrame = { [weak self] data in self?.client.sendAudio(data) }
+        client.onPartial = { [weak self] text in self?.hud.show(text) }
+        client.onFinal = { [weak self] text in
+            self?.hud.hide()
+            self?.client.close()
+            if !text.isEmpty { TextInjector.inject(text) }
+        }
+        client.onError = { [weak self] msg in
+            self?.hud.hide()
+            self?.forceStop()
+            self?.notify("Connection error", msg)
+        }
+    }
+
+    private func setupHotKey() {
+        hotKey = HotKey(keyCode: Settings.hotKeyCode, modifiers: Settings.hotKeyMods) { [weak self] in
+            self?.toggle()
+        }
+        if hotKey == nil {
+            notify("Hotkey unavailable", "Could not register ⌥Space. Another app may own it.")
+        }
+    }
+
+    private func requestPermissions() {
+        AVCaptureDevice.requestAccess(for: .audio) { _ in }
+        // Prompt for Accessibility (needed to inject keystrokes into other apps).
+        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(opts)
+    }
+
+    // MARK: dictation state machine
+
+    @objc private func toggle() {
+        recording ? stopRecording() : startRecording()
+    }
+
+    private func startRecording() {
+        guard !recording else { return }
+        client.connectAndStart()
+        do {
+            try audio.start()
+        } catch {
+            client.close()
+            notify("Microphone error", error.localizedDescription)
+            return
+        }
+        recording = true
+        updateIcon()
+        hud.show("Listening…")
+    }
+
+    private func stopRecording() {
+        guard recording else { return }
+        recording = false
+        updateIcon()
+        audio.stop()
+        client.stop()          // server replies with {final}; onFinal injects + closes
+    }
+
+    private func forceStop() {
+        recording = false
+        updateIcon()
+        audio.stop()
+        client.close()
+    }
+
+    // MARK: settings actions
+
+    @objc private func setServer() {
+        if let v = prompt("Server WebSocket URL", Settings.serverURL,
+                          "e.g. wss://192.168.1.50:7860/ws") {
+            Settings.serverURL = v.trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    @objc private func setToken() {
+        if let v = prompt("Auth token (blank = none)", Settings.authToken, "") {
+            Settings.authToken = v.trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    @objc private func toggleInject() {
+        Settings.injectMode = Settings.injectMode == "type" ? "paste" : "type"
+        injectItem?.state = Settings.injectMode == "type" ? .on : .off
+    }
+
+    // MARK: helpers
+
+    private func prompt(_ title: String, _ value: String, _ placeholder: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.stringValue = value
+        field.placeholderString = placeholder
+        alert.accessoryView = field
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil
+    }
+
+    private func notify(_ title: String, _ body: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = body
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+}
