@@ -11,7 +11,7 @@ certs/
 
 # Swift / macOS build artifacts
 client-mac/.build/
-client-mac/VoiceDictate.app/
+client-mac/Blurt.app/
 .DS_Store
 
 # Model / HF caches (if ever placed in-tree)

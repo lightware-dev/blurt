@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "VoiceDictate",
+    name: "Blurt",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(
-            name: "VoiceDictate",
-            path: "Sources/VoiceDictate",
+            name: "Blurt",
+            path: "Sources/Blurt",
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("AVFoundation"),

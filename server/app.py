@@ -1,5 +1,5 @@
 """
-Parakeet dictation server — VAD-segmented streaming over WebSocket.
+Blurt — Parakeet dictation server. VAD-segmented streaming over WebSocket.
 
 Protocol
 --------
@@ -50,7 +50,7 @@ FINAL_MAX_S = float(os.getenv("FINAL_MAX_S", "120"))
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 
-app = FastAPI(title="Parakeet Dictation")
+app = FastAPI(title="Blurt — Parakeet dictation server")
 asr = ParakeetASR()
 
 

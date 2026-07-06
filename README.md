@@ -1,6 +1,10 @@
-# 🦜 local-voice — Parakeet dictation
+# 🗣️ Blurt
 
-A high-performance, local speech-to-text dictation system:
+**Say it badly, get it typed well.** A high-performance, fully-local speech-to-text
+dictation system — you talk faster than you type, so just let it out and Blurt
+cleans it up into the field you're already in. Your voice never leaves your LAN.
+
+Two parts:
 
 - **`server/`** — a lean NVIDIA **Parakeet** streaming ASR server (Python + NeMo)
   that runs on this Linux box's RTX 5090. Minimal VRAM (~1.5 GB, bf16), low WER,
@@ -67,8 +71,8 @@ Built on the Mac (needs Xcode command-line tools):
 
 ```bash
 cd client-mac
-./build-app.sh        # universal arm64 + x86_64 → VoiceDictate.app (ad-hoc signed)
-open VoiceDictate.app
+./build-app.sh        # universal arm64 + x86_64 → Blurt.app (ad-hoc signed)
+open Blurt.app
 ```
 
 Set the server URL from the menu-bar icon (▸ *Set Server URL…* →

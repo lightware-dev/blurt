@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateIcon()
 
         let menu = NSMenu()
-        add(menu, "Toggle Dictation  (⌥Space)", #selector(toggle))
+        add(menu, "Start / Stop Blurting  (⌥Space)", #selector(toggle))
         menu.addItem(.separator())
         add(menu, "Set Server URL…", #selector(setServer))
         add(menu, "Set Auth Token…", #selector(setToken))
@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         injectItem = inject
         menu.addItem(inject)
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit VoiceDictate", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Blurt", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
         menu.addItem(quit)
         statusItem.menu = menu
@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateIcon() {
         guard let button = statusItem.button else { return }
         let name = recording ? "mic.fill" : "mic"
-        button.image = NSImage(systemSymbolName: name, accessibilityDescription: "Dictate")
+        button.image = NSImage(systemSymbolName: name, accessibilityDescription: "Blurt")
         button.contentTintColor = recording ? .systemRed : nil
     }
 

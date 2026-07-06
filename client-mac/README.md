@@ -1,4 +1,4 @@
-# VoiceDictate — macOS menu-bar client
+# Blurt — macOS menu-bar client
 
 Native Swift menu-bar app that streams your mic to the Parakeet server and types
 the transcript into the focused field. No Dock icon; lives in the menu bar.
@@ -9,8 +9,8 @@ Requires the Xcode command-line tools (`xcode-select --install`). No third-party
 dependencies — pure AppKit / AVFoundation / Carbon.
 
 ```bash
-./build-app.sh          # builds a universal (arm64 + x86_64) VoiceDictate.app
-open VoiceDictate.app
+./build-app.sh          # builds a universal (arm64 + x86_64) Blurt.app
+open Blurt.app
 ```
 
 `build-app.sh` compiles with `swift build -c release --arch arm64 --arch x86_64`,
@@ -24,7 +24,7 @@ For dev iteration you can also just `swift run` (single-arch, current machine).
 1. **Microphone** — macOS prompts on first dictation; allow it.
 2. **Accessibility** — required to insert text into other apps. The app triggers
    the prompt; open **System Settings ▸ Privacy & Security ▸ Accessibility** and
-   enable **VoiceDictate** (toggle off/on if you rebuild).
+   enable **Blurt** (toggle off/on if you rebuild).
 3. Click the menu-bar **mic** icon ▸ **Set Server URL…** →
    `wss://<your-linux-ip>:7860/ws` (and **Set Auth Token…** if the server has
    `AUTH_TOKEN` set).

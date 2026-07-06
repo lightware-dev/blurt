@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build a universal (arm64 + x86_64) VoiceDictate.app. Run this on the Mac.
+# Build a universal (arm64 + x86_64) Blurt.app. Run this on the Mac.
 #
-#   ./build-app.sh            # build both arches, bundle, ad-hoc sign
-#   open VoiceDictate.app     # launch (grant Mic + Accessibility when prompted)
+#   ./build-app.sh      # build both arches, bundle, ad-hoc sign
+#   open Blurt.app      # launch (grant Mic + Accessibility when prompted)
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP="VoiceDictate.app"
-BIN="VoiceDictate"
+APP="Blurt.app"
+BIN="Blurt"
 
 echo "▶ building universal binary (arm64 + x86_64)…"
 swift build -c release --arch arm64 --arch x86_64
@@ -27,5 +27,5 @@ codesign --force --deep --sign - "$APP"
 echo "✓ done"
 lipo -info "$APP/Contents/MacOS/$BIN"
 echo "Launch with:  open $APP"
-echo "First run: grant Microphone, then add VoiceDictate under"
+echo "First run: grant Microphone, then add Blurt under"
 echo "System Settings ▸ Privacy & Security ▸ Accessibility (needed to insert text)."
