@@ -107,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         recording = true
         updateIcon()
-        hud.show("Listening…")
+        hud.show("")   // empty → HUD shows its faded "Listening…" placeholder
     }
 
     private func stopRecording() {
