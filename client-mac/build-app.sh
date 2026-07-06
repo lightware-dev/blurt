@@ -15,7 +15,7 @@ BINDIR="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
 BUILT="$BINDIR/$BIN"
 [ -f "$BUILT" ] || { echo "build product not found at $BUILT"; exit 1; }
 
-echo "▶ assembling $APP…"
+echo "▶ assembling ${APP}…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILT" "$APP/Contents/MacOS/$BIN"

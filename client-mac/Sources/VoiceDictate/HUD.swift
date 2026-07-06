@@ -9,7 +9,9 @@ final class HUD {
     func show(_ text: String) {
         DispatchQueue.main.async {
             if self.window == nil { self.build() }
-            self.label.stringValue = text.isEmpty ? "Listening…" : text
+            let isPlaceholder = text.isEmpty
+            self.label.stringValue = isPlaceholder ? "Listening…" : text
+            self.label.textColor = isPlaceholder ? NSColor(white: 1, alpha: 0.4) : .white
             self.position()
             self.window?.orderFrontRegardless()
         }
@@ -33,11 +35,19 @@ final class HUD {
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.92).cgColor
         container.layer?.cornerRadius = 16
+        container.layer?.masksToBounds = true   // clip the label to the box
 
         label.font = .systemFont(ofSize: 19, weight: .medium)
         label.textColor = .white
-        label.maximumNumberOfLines = 3
-        label.lineBreakMode = .byWordWrapping
+        // Single line, fixed width: truncate the *head* so the most recent words
+        // stay visible on the right and older text scrolls off the left with an "…".
+        label.maximumNumberOfLines = 1
+        label.lineBreakMode = .byTruncatingHead
+        label.usesSingleLineMode = true
+        label.cell?.truncatesLastVisibleLine = true
+        // Let the label shrink/truncate rather than push the box wider.
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
         NSLayoutConstraint.activate([

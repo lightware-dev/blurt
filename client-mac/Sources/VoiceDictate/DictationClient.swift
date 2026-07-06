@@ -4,6 +4,7 @@ import Foundation
 /// {stop}; surfaces partial/final/status back on the main queue.
 final class DictationClient: NSObject, URLSessionDelegate {
     private var task: URLSessionWebSocketTask?
+    private var closing = false
     private lazy var session: URLSession =
         URLSession(configuration: .default, delegate: self, delegateQueue: nil)
 
@@ -20,6 +21,7 @@ final class DictationClient: NSObject, URLSessionDelegate {
             comps.queryItems = [URLQueryItem(name: "token", value: Settings.authToken)]
         }
         guard let url = comps.url else { onError?("Bad server URL"); return }
+        closing = false
         let t = session.webSocketTask(with: url)
         task = t
         t.resume()
@@ -35,6 +37,7 @@ final class DictationClient: NSObject, URLSessionDelegate {
     func stop() { sendJSON(["type": "stop"]) }
 
     func close() {
+        closing = true
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
     }
@@ -50,6 +53,9 @@ final class DictationClient: NSObject, URLSessionDelegate {
             guard let self = self else { return }
             switch result {
             case .failure(let err):
+                // A deliberate close() cancels the socket, which surfaces here as
+                // a "socket is not connected" failure. Don't report that as an error.
+                if self.closing { return }
                 DispatchQueue.main.async { self.onError?(err.localizedDescription) }
             case .success(let message):
                 if case .string(let s) = message { self.handle(s) }
