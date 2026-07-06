@@ -1,10 +1,12 @@
-"""Entrypoint: `python -m server`. Preloads the chosen model, serves wss:// if certs exist.
+"""blurtd — the Blurt dictation daemon. Entrypoint: `./blurtd` or `python -m server`.
+
+Preloads the chosen model, serves wss:// if certs exist.
 
 Examples:
-    python -m server                      # default model (v3, multilingual)
-    python -m server -m v2                # English-only 0.6B
-    python -m server -m 1.1b --port 8000  # larger English model
-    python -m server --list-models
+    ./blurtd                      # default model (v3, multilingual)
+    ./blurtd -m v2                # English-only 0.6B
+    ./blurtd -m 1.1b --port 8000  # larger English model
+    ./blurtd --list-models
 """
 
 import os
@@ -17,7 +19,7 @@ from server.models import describe, resolve, DEFAULT_ALIAS
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="python -m server", description="Parakeet dictation server")
+    p = argparse.ArgumentParser(prog="blurtd", description="blurtd — the Blurt (Parakeet) dictation daemon")
     p.add_argument("-m", "--model", default=os.getenv("PARAKEET_MODEL"),
                    help=f"model alias (see --list-models) or full HF id [default: {DEFAULT_ALIAS}]")
     p.add_argument("--list-models", action="store_true", help="print available models and exit")
@@ -48,11 +50,11 @@ def main():
     if cert.exists() and key.exists():
         kwargs["ssl_certfile"] = str(cert)
         kwargs["ssl_keyfile"] = str(key)
-        print(f"[server] model={asr.model_name}", flush=True)
-        print(f"[server] WSS on wss://<ip>:{args.port}/ws", flush=True)
+        print(f"[blurtd] model={asr.model_name}", flush=True)
+        print(f"[blurtd] WSS on wss://<ip>:{args.port}/ws", flush=True)
     else:
-        print(f"[server] model={asr.model_name}", flush=True)
-        print(f"[server] WS on ws://localhost:{args.port}/ws  (no certs → LAN mic blocked in browsers)", flush=True)
+        print(f"[blurtd] model={asr.model_name}", flush=True)
+        print(f"[blurtd] WS on ws://localhost:{args.port}/ws  (no certs → LAN mic blocked in browsers)", flush=True)
     uvicorn.run(app_module.app, **kwargs)
 
 

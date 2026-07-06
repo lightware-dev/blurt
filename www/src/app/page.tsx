@@ -6,8 +6,9 @@ const GITHUB = 'https://github.com/blurtvoice/blurt'
 const RIVALS = [
     'Whisper',
     'Wispr',
+    'Wispr Flow',
     'Superwhisper',
-    'OpenWhispr',
+    'Openwhispr',
     'Whispur',
     'Overwhisper',
     'Whisperstream',
@@ -22,7 +23,7 @@ const RIVALS = [
 const REJECTED = ['Trill', 'Loqui', 'Parley', 'Sotto', 'Utter']
 
 const STATS = [
-    { big: '~80ms', small: 'to transcribe a 35-second clip' },
+    { big: '~70ms', small: 'to transcribe a 35-second clip' },
     { big: '~2.3 GB', small: 'VRAM. your GPU won’t notice.' },
     { big: '0 bytes', small: 'leave your network' },
     { big: '$0/mo', small: 'forever. it’s just code.' },
@@ -213,6 +214,59 @@ export default function Home() {
                         not the length of the session. It’ll happily run all day.
                     </p>
                 </div>
+            </section>
+
+            {/* ── meet blurtd ─────────────────────────────────────── */}
+            <section className="mx-auto max-w-5xl px-6 py-20">
+                <h2 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">
+                    Meet <span className="font-mono text-marker">blurtd</span>.
+                </h2>
+                <p className="mt-4 max-w-xl text-bone/70">
+                    The server half is a daemon. We named it{' '}
+                    <code className="font-mono text-bone">blurtd</code> — which is, if you
+                    say it out loud, the past tense of what it does. There is a background
+                    process on your GPU whose entire identity is “blurted.” It’s fine. It’s
+                    happy.
+                </p>
+
+                <div className="mt-8 overflow-hidden rounded-2xl border border-ink-700 bg-ink-950 font-mono text-[13px] shadow-2xl shadow-black/40 sm:text-sm">
+                    <div className="flex items-center gap-2 border-b border-ink-700 bg-ink-850 px-4 py-2.5">
+                        <span className="size-3 rounded-full bg-coral/80" />
+                        <span className="size-3 rounded-full bg-marker/70" />
+                        <span className="size-3 rounded-full bg-bone/25" />
+                        <span className="ml-2 text-xs text-bone-dim">localhost — bash</span>
+                    </div>
+                    <pre className="overflow-x-auto px-5 py-5 leading-relaxed text-bone/85">
+                        <span className="text-bone-dim">$ </span>
+                        <span className="text-bone">systemctl status blurtd</span>
+                        {'\n'}
+                        <span className="text-marker">●</span> blurtd — the Blurt daemon
+                        {'\n'}
+                        {'   '}Loaded: loaded (
+                        <span className="text-bone">/opt/blurt/blurtd.service</span>; enabled)
+                        {'\n'}
+                        {'   '}Active:{' '}
+                        <span className="text-marker">blurting (running)</span> since you
+                        pressed ⌥Space
+                        {'\n'}
+                        {'     '}Docs: it’s the past tense of “blurted.” we regret nothing.
+                        {'\n'}
+                        {' '}Main PID: 1337 (parakeet-tdt-0.6b-v3)
+                        {'\n'}
+                        {'    '}Tasks: 1 (listening)
+                        {'\n'}
+                        {'   '}Memory: 2.3G
+                        {'\n'}
+                        {'   '}Egress:{' '}
+                        <span className="text-bone">
+                            0 bytes — your voice never leaves this box
+                        </span>
+                        {'\n'}
+                    </pre>
+                </div>
+                <p className="mt-3 font-mono text-xs text-bone-dim">
+                    // no, there is no `blurtd stop`. you press ⌥Space again. that’s the stop.
+                </p>
             </section>
 
             {/* ── stats ───────────────────────────────────────────── */}

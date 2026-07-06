@@ -41,6 +41,20 @@ Alternates:
 - Press ⌥Space and just… let it out.
 - Your voice, your GPU, your text. Nothing leaves the room.  ← privacy-forward variant
 
+## `blurtd` — the daemon (and the best joke we have)
+
+The server/daemon is named **`blurtd`**, and the whole gag is that it's the past
+tense of "blurted" — a background process on your GPU whose identity is "blurted."
+Launch it with `./blurtd` (thin wrapper over `python -m server`). Rich comedic
+material worth reusing anywhere:
+
+- **`systemctl status blurtd`** → `Active: blurting (running)`. The site has a
+  fake-terminal section built on this.
+- "There is no `blurtd stop`. You press ⌥Space again. That's the stop."
+- "A daemon named 'blurted.' We're at peace with it."
+- Log prefix is `[blurtd]`; argparse `prog` is `blurtd`.
+- Package name `blurtd` is free on npm + PyPI if ever published.
+
 ## UI voice & copy notes
 
 Keep the playful register in the *chrome* (menu, HUD, empty states) — never at the

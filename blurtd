@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# blurtd — the Blurt dictation daemon.
+#
+# A thin wrapper around `python -m server`. And yes: "blurtd" is the past tense
+# of the thing it does. A daemon named "blurted." We're at peace with it.
+#
+#   ./blurtd                      # default model (v3, multilingual)
+#   ./blurtd -m v2 --port 8000    # English-only 0.6B on another port
+#   ./blurtd --list-models
+set -euo pipefail
+cd "$(dirname "$0")"
+exec "${PYTHON:-python}" -m server "$@"

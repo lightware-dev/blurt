@@ -36,15 +36,18 @@ Two parts:
   `MAX_SEGMENT_S` caps an unbroken utterance, and CUDA cache is released after long
   segments so peak memory doesn't stick.
 
-## Server (Linux + GPU)
+## Server — `blurtd` (Linux + GPU)
+
+The server half is a daemon called **`blurtd`** — which is, yes, the past tense of
+what it does. `./blurtd` is a thin wrapper around `python -m server`.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt          # torch must match your CUDA (5090 → cu130)
 
-python -m server                         # default model (v3, multilingual)
-python -m server --list-models           # see all Parakeet variants
-python -m server -m v2 --port 8000       # English-only 0.6B on another port
+./blurtd                                  # default model (v3, multilingual)
+./blurtd --list-models                    # see all Parakeet variants
+./blurtd -m v2 --port 8000                # English-only 0.6B on another port
 ```
 
 Serves `wss://<ip>:7860/ws` when `certs/cert.pem` + `certs/key.pem` exist (they do),
