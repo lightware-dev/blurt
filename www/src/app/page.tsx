@@ -38,6 +38,52 @@ function KeyCap({ children }: { children: React.ReactNode }) {
     )
 }
 
+// Single-colour, outline pipeline icons (lucide-style, stroke on currentColor).
+const PIPE_ICONS: Record<string, React.ReactNode> = {
+    mic: (
+        <>
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" x2="12" y1="19" y2="22" />
+        </>
+    ),
+    scissors: (
+        <>
+            <circle cx="6" cy="6" r="3" />
+            <path d="M8.12 8.12 12 12" />
+            <path d="M20 4 8.12 15.88" />
+            <circle cx="6" cy="18" r="3" />
+            <path d="M14.8 14.8 20 20" />
+        </>
+    ),
+    zap: (
+        <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
+    ),
+    cursor: (
+        <>
+            <path d="M17 22h-1a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4h1" />
+            <path d="M7 22h1a4 4 0 0 0 4-4V6a4 4 0 0 0-4-4H7" />
+        </>
+    ),
+}
+
+function PipeIcon({ name }: { name: string }) {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className="h-8 w-8 text-marker"
+        >
+            {PIPE_ICONS[name]}
+        </svg>
+    )
+}
+
 export default function Home() {
     return (
         <main className="dotgrid min-h-screen">
@@ -186,14 +232,14 @@ export default function Home() {
 
                     <div className="mt-10 flex flex-col gap-3 font-mono text-sm sm:flex-row sm:items-stretch sm:gap-0">
                         {[
-                            ['🎙️', 'mic', '16 kHz PCM16, straight off AVAudioEngine'],
-                            ['✂️', 'VAD', 'Silero splits your speech at the pauses'],
-                            ['⚡', 'Parakeet', 'GPU re-decodes every ~350ms, low WER'],
-                            ['⌨️', 'your cursor', 'final text pasted into the focused field'],
+                            ['mic', 'mic', '16 kHz PCM16, straight off AVAudioEngine'],
+                            ['scissors', 'VAD', 'Silero splits your speech at the pauses'],
+                            ['zap', 'Parakeet', 'GPU re-decodes every ~350ms, low WER'],
+                            ['cursor', 'your cursor', 'final text pasted into the focused field'],
                         ].map(([icon, title, sub], idx, arr) => (
                             <div key={title} className="flex items-stretch sm:flex-1">
                                 <div className="flex-1 rounded-xl border border-ink-700 bg-ink-950 p-4">
-                                    <div className="text-lg">{icon}</div>
+                                    <PipeIcon name={icon} />
                                     <div className="mt-2 font-display text-base font-bold text-bone">
                                         {title}
                                     </div>
