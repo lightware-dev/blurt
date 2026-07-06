@@ -9,4 +9,10 @@
 #   ./blurtd --list-models
 set -euo pipefail
 cd "$(dirname "$0")"
+
+# Prefer the project virtualenv if present, unless PYTHON is set explicitly.
+if [[ -z "${PYTHON:-}" && -x .venv/bin/python ]]; then
+  PYTHON=.venv/bin/python
+fi
+
 exec "${PYTHON:-python}" -m server "$@"

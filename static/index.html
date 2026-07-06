@@ -4,44 +4,126 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Blurt — mic test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
 <style>
-  :root { color-scheme: dark; }
-  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; background:#0e0f12; color:#e7e9ee;
-         display:flex; flex-direction:column; min-height:100vh; }
-  header { padding:16px 20px; border-bottom:1px solid #23262d; display:flex; align-items:center; gap:14px; }
-  h1 { font-size:16px; margin:0; font-weight:600; }
-  #dot { width:10px; height:10px; border-radius:50%; background:#555; }
-  #dot.rec{background:#ff4d4f; animation:pulse 1s infinite}
-  @keyframes pulse{50%{opacity:.3}}
-  main { flex:1; padding:22px; display:flex; flex-direction:column; gap:14px; }
-  button { font:600 15px system-ui; padding:12px 22px; border-radius:10px; border:0; cursor:pointer;
-           background:#3b82f6; color:#fff; }
-  button.rec { background:#ef4444; }
-  #out { flex:1; white-space:pre-wrap; font-size:20px; padding:18px; border-radius:12px;
-         background:#16181d; border:1px solid #23262d; min-height:200px; }
-  .partial { color:#9aa4b2; }
-  #status { font-size:13px; color:#7c8494; }
+  /* Design language lifted from the marketing site (www/): near-black HUD ink,
+     warm bone text, one loud highlighter-yellow accent, coral for the rec dot,
+     a faint engineering-paper dot grid, and the Space Grotesk / Inter / JetBrains
+     Mono trio. Falls back to system stacks if the web fonts don't load. */
+  :root {
+    color-scheme: dark;
+    --ink-950:#090a0c; --ink-900:#0f1115; --ink-850:#14161b;
+    --ink-800:#191c22; --ink-700:#23262d; --ink-600:#30343d;
+    --bone:#ece6d8; --bone-dim:#8f8b7e;
+    --marker:#e8ff32; --coral:#ff5943;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --display: "Space Grotesk", var(--sans);
+  }
+  * { box-sizing: border-box; }
+  body { font: 16px/1.5 var(--sans); margin: 0; background:var(--ink-950); color:var(--bone);
+         display:flex; flex-direction:column; min-height:100vh; -webkit-font-smoothing:antialiased;
+         /* faint engineering-paper dot grid */
+         background-image: radial-gradient(var(--ink-700) 1px, transparent 1px);
+         background-size: 22px 22px; background-position:-1px -1px; }
+  ::selection { background:var(--marker); color:var(--ink-950); }
+
+  /* ── top nav — mirrors the site header ─────────────────────────── */
+  .nav { width:100%; max-width:680px; margin:0 auto; padding:22px 24px;
+         display:flex; align-items:center; justify-content:space-between; }
+  .brand { display:flex; align-items:center; gap:8px; font:700 20px var(--display);
+           letter-spacing:-0.01em; }
+  .caret { color:var(--marker); animation:blink 1.05s steps(1) infinite; }
+  .nav .tag { font:400 12px var(--mono); color:var(--bone-dim); letter-spacing:.02em; }
+
+  /* ── centered stage ───────────────────────────────────────────── */
+  main { flex:1; width:100%; max-width:680px; margin:0 auto; padding:8px 24px 48px;
+         display:flex; flex-direction:column; gap:16px; }
+
+  /* HUD card — rounded, bordered, subtle lift, like the demo panel */
+  .card { border:1px solid var(--ink-700); border-radius:16px; background:var(--ink-900);
+          overflow:hidden; box-shadow:0 24px 48px -24px rgba(0,0,0,.7); }
+  .titlebar { display:flex; align-items:center; gap:10px; padding:12px 16px;
+              background:var(--ink-850); border-bottom:1px solid var(--ink-700); }
+  #dot { width:10px; height:10px; border-radius:50%; background:var(--ink-600); flex:none; }
+  #dot.rec { background:var(--coral); box-shadow:0 0 10px var(--coral); animation:pulse 1s infinite; }
+  @keyframes pulse{ 50%{opacity:.3} }
+  .titlebar .label { font:500 13px var(--mono); letter-spacing:.02em; color:var(--bone-dim); }
+  #status { margin-left:auto; font:400 11px var(--mono); letter-spacing:.04em; color:var(--bone-dim); }
+
+  #out { min-height:220px; padding:22px; white-space:pre-wrap; font-size:20px;
+         line-height:1.5; color:var(--bone); }
+  /* live/partial text: mono + dimmed (the messy blurt) */
+  #out.live { font-family:var(--mono); font-size:16px; color:var(--bone-dim); }
+  #out.placeholder { color:var(--bone-dim); font-size:16px; }
+  .cursor { display:inline-block; width:.5em; height:1.05em; vertical-align:text-bottom;
+            margin-left:2px; background:var(--bone); animation:blink 1.05s steps(1) infinite; }
+  @keyframes blink{ 0%,50%{opacity:1} 50.01%,100%{opacity:0} }
+
+  /* ── controls row ─────────────────────────────────────────────── */
+  .controls { display:flex; align-items:center; gap:12px; }
+  button { font:600 15px var(--sans); border-radius:12px; cursor:pointer; transition:filter .15s, background .15s, color .15s, border-color .15s; }
+  /* primary — the loud highlighter accent */
+  #btn { padding:12px 26px; border:0; background:var(--marker); color:var(--ink-950);
+         font-family:var(--display); font-weight:700; }
+  #btn:hover { filter:brightness(.95); }
+  #btn.rec { background:var(--coral); color:var(--bone); }
+  /* secondary — bordered ghost button */
+  #copy { margin-left:auto; padding:11px 20px; background:transparent; border:1px solid var(--ink-600);
+          color:var(--bone); font:500 14px var(--mono); }
+  #copy:hover:not(:disabled) { background:var(--ink-900); border-color:var(--bone-dim); }
+  #copy:disabled { opacity:.4; cursor:not-allowed; }
+  #copy.done { border-color:var(--marker); color:var(--marker); }
+
+  .hint { font:400 12px var(--mono); color:var(--bone-dim); text-align:center; margin:2px 0 0; }
 </style>
 </head>
 <body>
-<header>
-  <span id="dot"></span>
-  <h1>🗣️ Blurt — mic test</h1>
-  <span id="status">idle</span>
-</header>
+<nav class="nav">
+  <div class="brand"><span class="caret">▍</span><span>Blurt</span></div>
+  <span class="tag">/mic-test</span>
+</nav>
+
 <main>
-  <div><button id="btn">Start</button></div>
-  <div id="out"><span class="partial">Press Start and speak. Live partials appear as you talk; final text prints on Stop.</span></div>
+  <div class="card">
+    <div class="titlebar">
+      <span id="dot"></span>
+      <span class="label" id="state">idle</span>
+      <span id="status">not connected</span>
+    </div>
+    <div id="out" class="placeholder">Press Start and speak. A rough transcript streams live as you talk; the cleaned-up version appears when you Stop.</div>
+  </div>
+
+  <div class="controls">
+    <button id="btn">Start</button>
+    <button id="copy" disabled>Copy</button>
+  </div>
+
+  <p class="hint">runs on your GPU · nothing leaves this box</p>
 </main>
+
 <script>
 const btn = document.getElementById('btn');
+const copyBtn = document.getElementById('copy');
 const out = document.getElementById('out');
+const stateEl = document.getElementById('state');
 const statusEl = document.getElementById('status');
 const dot = document.getElementById('dot');
 let ws, ctx, node, stream, recording = false;
+let transcript = '';       // latest text worth copying
 
+function setState(s){ stateEl.textContent = s; }
 function setStatus(s){ statusEl.textContent = s; }
 function escapeHtml(s){ return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function setTranscript(text){
+  transcript = text;
+  copyBtn.disabled = !text.trim();
+  copyBtn.classList.remove('done');
+  copyBtn.textContent = 'Copy';
+}
 
 async function start(){
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -57,21 +139,30 @@ async function start(){
     node.port.onmessage = (e) => { if (recording && ws.readyState === 1) ws.send(e.data); };
     src.connect(node);
     recording = true;
-    dot.className = 'rec'; setStatus('recording…');
+    dot.className = 'rec'; setState('recording'); setStatus('live');
     btn.textContent = 'Stop'; btn.classList.add('rec');
   };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
-    if (m.type === 'status'){ setStatus(m.state + (m.detail ? ': '+m.detail : '')); }
-    else if (m.type === 'partial'){ out.innerHTML = escapeHtml(m.text) + ' <span class="partial">…</span>'; }
-    else if (m.type === 'final'){ out.textContent = m.text; setStatus('final'); }
+    if (m.type === 'status'){ setState(m.state + (m.detail ? ': '+m.detail : '')); }
+    else if (m.type === 'partial'){
+      out.className = 'live';
+      out.innerHTML = escapeHtml(m.text) + '<span class="cursor"></span>';
+      setTranscript(m.text);
+    }
+    else if (m.type === 'final'){
+      out.className = '';
+      out.textContent = m.text;
+      setState('final'); setTranscript(m.text);
+    }
   };
-  ws.onclose = () => { setStatus('disconnected'); dot.className=''; };
+  ws.onclose = () => { setState('idle'); setStatus('disconnected'); dot.className=''; };
 }
 
 function stop(){
   recording = false;
   btn.textContent = 'Start'; btn.classList.remove('rec');
+  dot.className = ''; setState('idle');
   if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'stop'}));
   if (node) node.disconnect();
   if (stream) stream.getTracks().forEach(t=>t.stop());
@@ -79,6 +170,16 @@ function stop(){
 }
 
 btn.onclick = () => recording ? stop() : start();
+
+copyBtn.onclick = async () => {
+  if (!transcript.trim()) return;
+  try {
+    await navigator.clipboard.writeText(transcript);
+    copyBtn.textContent = 'Copied ✓';
+    copyBtn.classList.add('done');
+    setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('done'); }, 1400);
+  } catch { copyBtn.textContent = 'Copy failed'; }
+};
 </script>
 </body>
 </html>
