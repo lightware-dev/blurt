@@ -79,8 +79,8 @@ Checked 2026-07-06. "Voice space" = any existing dictation/STT product.
 | Slug | Status | Notes |
 |---|---|---|
 | **Brand "Blurt"** | ✅ clear in voice space | no dictation/STT product uses it |
-| `github.com/<you>/blurt` | ✅ yours | repo namespace is per-user regardless of the org handle |
-| `github.com/blurt` (org) | ⚠️ taken | not needed; unrelated |
+| `github.com/blurtvoice` (org) | ✅ OWNED | grabbed; repo lives at `blurtvoice/blurt` |
+| `github.com/blurt` (org) | ⚠️ taken | unrelated; we use the `blurtvoice` org instead |
 | npm `blurt` | ⚠️ taken | dead fire-and-forget messaging lib, last publish 2017 — unrelated |
 | npm **`blurtd`** | ✅ FREE | ideal for the server/daemon package |
 | PyPI `blurt` / `blurtd` | ✅ FREE | both open |
@@ -94,7 +94,7 @@ Checked 2026-07-06. "Voice space" = any existing dictation/STT product.
 **Recommended handle set:**
 
 - **Brand:** Blurt · **Mac app:** Blurt.app · bundle id `app.blurtvoice.menubar`
-- **Repo:** `<you>/blurt`
+- **Repo:** `blurtvoice/blurt` (GitHub org `blurtvoice` is owned)
 - **Server package (if ever published):** `blurtd` (npm + PyPI both free) —
   "the blurt daemon" is also just a funny sentence
 - **Domain:** **blurtvoice.com** (primary, registered), blurtvoice.app /

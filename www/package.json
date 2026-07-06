@@ -1,0 +1,27 @@
+{
+    "name": "@blurt/www",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "dev": "next dev --turbopack",
+        "build": "next build",
+        "start": "next start",
+        "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+        "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview"
+    },
+    "dependencies": {
+        "@opennextjs/cloudflare": "^1.19.10",
+        "next": "^16.2.6",
+        "react": "^19.1.2",
+        "react-dom": "^19.1.2"
+    },
+    "devDependencies": {
+        "@tailwindcss/postcss": "^4",
+        "@types/node": "^20.19.21",
+        "@types/react": "^19",
+        "@types/react-dom": "^19",
+        "tailwindcss": "^4",
+        "typescript": "^5",
+        "wrangler": "^4.54.0"
+    }
+}

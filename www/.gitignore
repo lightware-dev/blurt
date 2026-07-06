@@ -1,0 +1,16 @@
+# deps
+/node_modules
+
+# next
+/.next
+/out
+
+# opennext / cloudflare
+/.open-next
+/.wrangler
+.dev.vars
+
+# misc
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts.timestamp

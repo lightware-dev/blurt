@@ -1,0 +1,93 @@
+@import 'tailwindcss';
+
+@theme {
+    /* Near-black "HUD" ink, warm bone text, one loud highlighter accent. */
+    --color-ink-950: #090a0c;
+    --color-ink-900: #0f1115;
+    --color-ink-850: #14161b;
+    --color-ink-800: #191c22;
+    --color-ink-700: #23262d;
+    --color-ink-600: #30343d;
+
+    --color-bone: #ece6d8;
+    --color-bone-dim: #8f8b7e;
+
+    --color-marker: #e8ff32; /* highlighter yellow — the "we highlighted your mess" motif */
+    --color-coral: #ff5943; /* the rec dot / small alarms */
+
+    --font-sans: var(--font-inter);
+    --font-display: var(--font-space);
+    --font-mono: var(--font-jetbrains);
+
+    --animate-blink: blink 1.05s steps(1) infinite;
+
+    @keyframes blink {
+        0%,
+        50% {
+            opacity: 1;
+        }
+        50.01%,
+        100% {
+            opacity: 0;
+        }
+    }
+
+    @keyframes sweep {
+        from {
+            transform: scaleX(0);
+        }
+        to {
+            transform: scaleX(1);
+        }
+    }
+}
+
+@layer base {
+    html {
+        scroll-behavior: smooth;
+    }
+    body {
+        background-color: var(--color-ink-950);
+        color: var(--color-bone);
+        font-family: var(--font-sans);
+        -webkit-font-smoothing: antialiased;
+    }
+    ::selection {
+        background: var(--color-marker);
+        color: var(--color-ink-950);
+    }
+}
+
+@layer components {
+    /* hand-highlighter over a word: box-decoration-clone keeps it clean across line wraps */
+    .mark {
+        background-color: var(--color-marker);
+        color: var(--color-ink-950);
+        padding: 0.02em 0.22em;
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
+    }
+
+    /* animated marker reveal used in the live demo */
+    .mark-sweep {
+        position: relative;
+        color: var(--color-ink-950);
+        isolation: isolate;
+    }
+    .mark-sweep::before {
+        content: '';
+        position: absolute;
+        inset: 0.04em -0.18em;
+        background: var(--color-marker);
+        transform-origin: left;
+        animation: sweep 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        z-index: -1;
+    }
+
+    /* faint engineering-paper dot grid */
+    .dotgrid {
+        background-image: radial-gradient(var(--color-ink-700) 1px, transparent 1px);
+        background-size: 22px 22px;
+        background-position: -1px -1px;
+    }
+}
