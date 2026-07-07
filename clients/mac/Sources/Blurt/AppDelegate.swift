@@ -59,9 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateIcon() {
         guard let button = statusItem.button else { return }
-        let name = recording ? "mic.fill" : "mic"
-        button.image = NSImage(systemSymbolName: name, accessibilityDescription: "Blurt")
-        button.contentTintColor = recording ? .systemRed : nil
+        // Blurt's own highlighter-bar mark (from the favicon), tinted coral
+        // while recording so the menu bar shows "blurting" at a glance.
+        button.image = Brand.menuBarIcon()
+        button.contentTintColor = recording ? Brand.coral : nil
     }
 
     // MARK: wiring

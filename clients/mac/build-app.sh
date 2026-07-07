@@ -21,6 +21,13 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILT" "$APP/Contents/MacOS/$BIN"
 cp Info.plist "$APP/Contents/Info.plist"
 
+# App icon (Blurt favicon design). Regenerate from AppIcon.svg when possible;
+# otherwise reuse the committed AppIcon.icns.
+if [ ! -f AppIcon.icns ] && command -v magick >/dev/null 2>&1; then
+    ./make-icon.sh
+fi
+[ -f AppIcon.icns ] && cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+
 # Sign with Developer ID (for distribution/notarization) when the cert is
 # present; otherwise fall back to an ad-hoc signature for local personal use.
 # Override the identity with SIGN_IDENTITY=... ./build-app.sh

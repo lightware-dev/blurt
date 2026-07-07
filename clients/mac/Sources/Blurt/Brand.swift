@@ -39,4 +39,36 @@ enum Brand {
     static func mono(_ size: CGFloat, _ weight: NSFont.Weight = .regular) -> NSFont {
         NSFont.monospacedSystemFont(ofSize: size, weight: weight)
     }
+
+    // ── menu-bar glyph ───────────────────────────────────────
+    /// The Blurt mark — the single upright "highlighter bar" from the favicon
+    /// (`www/public/favicon.svg`), sized for the status bar. Rendered as an
+    /// AppKit *template* image: pure black + alpha so macOS tints it to match
+    /// the menu bar (and the app can override the tint red while recording).
+    static func menuBarIcon() -> NSImage {
+        let size = NSSize(width: 19, height: 19)
+        let image = NSImage(size: size, flipped: false) { rect in
+            NSColor.black.setFill()
+            NSColor.black.setStroke()
+
+            // Thin rounded-square border (as wide as tall), echoing the
+            // favicon's dark rounded square. Inset by half the line width so
+            // the stroke lands crisply inside the frame.
+            let line: CGFloat = 1.2
+            let side: CGFloat = 17
+            let frame = NSRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side)
+                .insetBy(dx: line / 2, dy: line / 2)
+            let border = NSBezierPath(roundedRect: frame, xRadius: 4.4, yRadius: 4.4)
+            border.lineWidth = line
+            border.stroke()
+
+            // The upright "highlighter bar" mark, centered inside the frame.
+            let w: CGFloat = 3.5, h: CGFloat = 9.5
+            let bar = NSRect(x: rect.midX - w / 2, y: rect.midY - h / 2, width: w, height: h)
+            NSBezierPath(roundedRect: bar, xRadius: 1.2, yRadius: 1.2).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
 }

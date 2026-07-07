@@ -10,6 +10,8 @@
     <string>app.blurtvoice.menubar</string>
     <key>CFBundleExecutable</key>
     <string>Blurt</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
