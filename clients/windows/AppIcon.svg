@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Blurt app icon: same design as www/public/favicon.svg and the Mac
+       client's AppIcon.svg, scaled into a 1024px canvas with padding. -->
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="#090a0c"/>
+  <rect x="409" y="280" width="180" height="464" rx="39" fill="#e8ff32"/>
+</svg>

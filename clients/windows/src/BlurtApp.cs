@@ -68,7 +68,7 @@ internal sealed class BlurtApp : IDisposable
         menu.Items.Add(new ToolStripSeparator());
         Add(menu, "Quit Blurt", (_, _) => Quit());
 
-        _currentIcon = IconFactory.Mic(false);
+        _currentIcon = IconFactory.Tray(false);
         _tray = new NotifyIcon
         {
             Icon = _currentIcon,
@@ -86,7 +86,7 @@ internal sealed class BlurtApp : IDisposable
     private void UpdateIcon()
     {
         if (_tray is null) return;
-        var next = IconFactory.Mic(_recording);
+        var next = IconFactory.Tray(_recording);
         _tray.Icon = next;
         _currentIcon?.Dispose();
         _currentIcon = next;

@@ -18,6 +18,9 @@
     <RootNamespace>Blurt</RootNamespace>
     <StartupObject>Blurt.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Exe / taskbar / window-chrome icon: the Blurt favicon mark (bar on a
+         dark rounded square), same design as www/public/favicon.svg. -->
+    <ApplicationIcon>Blurt.ico</ApplicationIcon>
     <!-- WFAC010 nags to move DPI settings out of the manifest into a WinForms-only
          project property, but we're WPF-first (no WinForms app bootstrap) and the
          manifest is the correct place for WPF DPI awareness. -->
