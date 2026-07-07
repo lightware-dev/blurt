@@ -44,7 +44,7 @@ fi
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 mkdir -p dist
 SUBMIT_ZIP="$(mktemp -d)/notarize.zip"
-DIST_ZIP="dist/Blurt-${VERSION}.zip"
+DIST_ZIP="dist/Blurt-${VERSION}-macOS.zip"
 
 # 2. Notarize: submit a zip of the .app and block until Apple returns a verdict.
 #    On failure, dump the detailed log so the rejection reason is visible.

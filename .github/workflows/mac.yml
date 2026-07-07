@@ -130,7 +130,7 @@ jobs:
                   ./build-app.sh
                   VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Blurt.app/Contents/Info.plist)"
                   mkdir -p dist
-                  ditto -c -k --keepParent Blurt.app "dist/Blurt-${VERSION}.zip"
+                  ditto -c -k --keepParent Blurt.app "dist/Blurt-${VERSION}-macOS.zip"
 
             # ---- common: resolve + upload ----
             - name: resolve artifact
