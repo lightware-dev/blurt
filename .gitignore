@@ -15,6 +15,15 @@ clients/mac/Blurt.app/
 clients/mac/dist/
 .DS_Store
 
+# .NET / Windows build artifacts
+clients/windows/bin/
+clients/windows/obj/
+clients/windows/publish/
+clients/windows/dist/
+
+# Windows code-signing material must never be committed.
+*.pfx
+
 # Signing material must never be committed — keep it in a password manager.
 *.p12
 *.p8

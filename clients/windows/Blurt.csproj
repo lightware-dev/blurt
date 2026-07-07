@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Blurt for Windows — a system-tray dictation client, the Windows twin of
+    clients/mac. WPF gives us the branded onboarding + HUD windows; WinForms is
+    pulled in only for the NotifyIcon (there is no first-class WPF tray control).
+    Built as a single self-contained Blurt.exe by .github/workflows/windows.yml.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Blurt</AssemblyName>
+    <RootNamespace>Blurt</RootNamespace>
+    <StartupObject>Blurt.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Kept in lockstep with the release tag by windows.yml, mirroring the Mac
+         Info.plist version guard. -->
+    <Version>1.0.0</Version>
+    <Product>Blurt</Product>
+    <Company>Lightware Consulting, Lda</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WASAPI/WinMM mic capture + resampling to 16 kHz mono PCM16. -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
+  <!-- UseWindowsForms + ImplicitUsings would inject `global using System.Windows.Forms`
+       and `System.Drawing` into every file, clashing with WPF (Button, TextBox, Color,
+       Brush, Point…). Drop the globals; the two files that need WinForms/GDI (BlurtApp,
+       IconFactory) import them explicitly. -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+</Project>

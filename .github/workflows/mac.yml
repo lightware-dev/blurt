@@ -164,8 +164,12 @@ jobs:
                   # A stable, version-less copy so the website can link a fixed URL:
                   #   https://github.com/${{ github.repository }}/releases/latest/download/Blurt-macOS.zip
                   cp "$ZIP" "clients/mac/dist/Blurt-macOS.zip"
-                  gh release create "$GITHUB_REF_NAME" \
+                  # The macOS and Windows workflows target the same v* tag + release,
+                  # so creation must be idempotent — whichever job runs second just
+                  # uploads its assets to the already-created release.
+                  gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+                      || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                             --title "Blurt $GITHUB_REF_NAME" --generate-notes
+                  gh release upload "$GITHUB_REF_NAME" \
                       "$ZIP" "clients/mac/dist/Blurt-macOS.zip" \
-                      --repo "$GITHUB_REPOSITORY" \
-                      --title "Blurt $GITHUB_REF_NAME" \
-                      --generate-notes
+                      --repo "$GITHUB_REPOSITORY" --clobber

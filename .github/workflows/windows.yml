@@ -1,0 +1,152 @@
+name: Build Windows app
+
+# Builds Blurt for Windows as a single self-contained Blurt.exe and publishes it as
+# a downloadable zip — the Windows twin of mac.yml. When an Authenticode signing
+# cert is present (secrets on push to main / tag / manual run) the exe is signed;
+# otherwise it ships unsigned (SmartScreen will warn on first launch). Pushing a
+# `v*` tag additionally publishes a GitHub Release with the zip attached.
+#
+# Path-filtered to clients/windows/** so it doesn't run on server/www-only pushes.
+# NOTE: path filters are ignored for tag pushes, so `v*` tags always run — exactly
+# what we want for cutting a release.
+on:
+    push:
+        branches:
+            - main
+        tags:
+            - 'v*'
+        paths:
+            - 'clients/windows/**'
+            - '.github/workflows/windows.yml'
+    pull_request:
+        paths:
+            - 'clients/windows/**'
+            - '.github/workflows/windows.yml'
+    workflow_dispatch:
+
+jobs:
+    build-windows:
+        runs-on: windows-latest
+        name: Build & package Blurt (release)
+        permissions:
+            contents: write # needed to publish a GitHub Release on tag pushes
+        defaults:
+            run:
+                shell: pwsh
+                working-directory: clients/windows
+        steps:
+            - name: checkout
+              uses: actions/checkout@v4
+
+            - name: setup .NET 8
+              uses: actions/setup-dotnet@v4
+              with:
+                  dotnet-version: '8.0.x'
+
+            - name: toolchain versions
+              run: dotnet --info
+
+            # Read the version from the csproj so the artifact name + release tag guard
+            # stay in lockstep (mirrors the Mac Info.plist version check).
+            - name: read version
+              id: ver
+              run: |
+                  [xml]$proj = Get-Content Blurt.csproj
+                  $v = ($proj.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1
+                  if (-not $v) { Write-Error 'No <Version> in Blurt.csproj'; exit 1 }
+                  "version=$v" >> $env:GITHUB_OUTPUT
+                  "Version: $v"
+
+            - name: determine build mode
+              id: cfg
+              env:
+                  PFX: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+              run: |
+                  $signed = ($env:PFX -and $env:GITHUB_EVENT_NAME -ne 'pull_request')
+                  "signed=$($signed.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+                  $release = "$env:GITHUB_REF".StartsWith('refs/tags/v')
+                  "release=$($release.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+
+            # Fail fast: keep the tag in lockstep with the assembly version so the zip
+            # name matches the release (mirrors the Mac guard).
+            - name: guard release preconditions
+              if: steps.cfg.outputs.release == 'true'
+              run: |
+                  if ("$env:GITHUB_REF_NAME" -ne "v${{ steps.ver.outputs.version }}") {
+                      Write-Error "Tag $env:GITHUB_REF_NAME does not match version v${{ steps.ver.outputs.version }} (set <Version> in clients/windows/Blurt.csproj)."
+                      exit 1
+                  }
+
+            - name: restore
+              run: dotnet restore
+
+            # Single-file, self-contained x64 build — no .NET runtime needed on the
+            # target machine. Produces publish/Blurt.exe.
+            - name: publish
+              run: >
+                  dotnet publish Blurt.csproj
+                  -c Release
+                  -r win-x64
+                  --self-contained true
+                  -p:PublishSingleFile=true
+                  -p:IncludeNativeLibrariesForSelfExtract=true
+                  -p:EnableCompressionInSingleFile=true
+                  -o publish
+
+            # ---- optional Authenticode signing ----
+            - name: sign exe
+              if: steps.cfg.outputs.signed == 'true'
+              env:
+                  PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+                  PFX_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+              run: |
+                  $pfx = "$env:RUNNER_TEMP\cert.pfx"
+                  [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
+                  $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+                      Sort-Object FullName -Descending | Select-Object -First 1
+                  & $signtool.FullName sign /f $pfx /p $env:PFX_PASSWORD `
+                      /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+                      publish\Blurt.exe
+                  Remove-Item $pfx -Force
+
+            - name: package zip
+              id: artifact
+              run: |
+                  $ver = "${{ steps.ver.outputs.version }}"
+                  New-Item -ItemType Directory -Force dist | Out-Null
+                  $zip = "dist/Blurt-$ver-Windows.zip"
+                  Compress-Archive -Path publish/Blurt.exe -DestinationPath $zip -Force
+                  "zip=clients/windows/$zip" >> $env:GITHUB_OUTPUT
+                  $sha = "$env:GITHUB_SHA".Substring(0,7)
+                  "name=Blurt-$ver-Windows-$sha" >> $env:GITHUB_OUTPUT
+
+            - name: upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ steps.artifact.outputs.name }}
+                  path: ${{ steps.artifact.outputs.zip }}
+                  if-no-files-found: error
+                  retention-days: 30
+
+            # ---- release: attach the zip to a GitHub Release ----
+            - name: publish GitHub Release
+              if: steps.cfg.outputs.release == 'true'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              working-directory: clients/windows
+              run: |
+                  $zip = "dist/Blurt-${{ steps.ver.outputs.version }}-Windows.zip"
+                  # A stable, version-less copy so the website can link a fixed URL:
+                  #   https://github.com/${{ github.repository }}/releases/latest/download/Blurt-Windows.zip
+                  Copy-Item $zip "dist/Blurt-Windows.zip"
+                  # The macOS and Windows workflows target the same v* tag + release,
+                  # so creation must be idempotent — whichever job runs second just
+                  # uploads its assets to the already-created release.
+                  gh release view "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" 2>$null
+                  if ($LASTEXITCODE -ne 0) {
+                      gh release create "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" `
+                          --title "Blurt $env:GITHUB_REF_NAME" --generate-notes
+                  }
+                  gh release upload "$env:GITHUB_REF_NAME" `
+                      "$zip" "dist/Blurt-Windows.zip" `
+                      --repo "$env:GITHUB_REPOSITORY" --clobber
