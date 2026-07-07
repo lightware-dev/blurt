@@ -18,6 +18,10 @@
     <RootNamespace>Blurt</RootNamespace>
     <StartupObject>Blurt.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WFAC010 nags to move DPI settings out of the manifest into a WinForms-only
+         project property, but we're WPF-first (no WinForms app bootstrap) and the
+         manifest is the correct place for WPF DPI awareness. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <!-- Kept in lockstep with the release tag by windows.yml, mirroring the Mac
          Info.plist version guard. -->
     <Version>1.0.0</Version>
