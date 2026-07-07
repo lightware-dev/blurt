@@ -1,0 +1,174 @@
+<svg width="1300" height="400" viewBox="0 0 1300 400" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .cap { font-family:'JetBrains Mono',monospace,monospace; font-size:14px; letter-spacing:0.02em; }
+    .step { font-family:'JetBrains Mono',monospace,monospace; font-size:12px; fill:#8f8b7e; }
+  </style>
+
+  <!-- ================= 1 · WAITING (bored, tapping) ================= -->
+  <g transform="translate(0,0)">
+    <rect x="6" y="6" width="248" height="388" rx="18" fill="#0f1115" stroke="#23262d" stroke-width="1.5"/>
+    <text x="22" y="34" class="step">01</text>
+    <ellipse cx="130" cy="250" rx="48" ry="8" fill="#000000" opacity="0.4"/>
+    <!-- bored 'tap tap' dots by the foot -->
+    <text x="176" y="250" class="cap" fill="#8f8b7e">tap</text>
+    <!-- hand on hip -->
+    <path d="M90 178 q-16 2 -14 -16" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <!-- other arm hanging, drumming -->
+    <path d="M170 178 q14 6 12 22" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <rect x="90" y="96" width="80" height="140" rx="24" fill="#e8ff32"/>
+    <!-- feet: one flat, one tapping (raised) -->
+    <rect x="98" y="236" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <rect x="140" y="230" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <path d="M150 250 q6 6 14 4" stroke="#8f8b7e" stroke-width="2.5" fill="none" opacity="0.6"/>
+    <!-- heavy-lidded bored eyes -->
+    <circle cx="114" cy="150" r="8" fill="#090a0c"/>
+    <circle cx="146" cy="150" r="8" fill="#090a0c"/>
+    <rect x="104" y="140" width="20" height="8" rx="3" fill="#e8ff32"/>
+    <rect x="136" y="140" width="20" height="8" rx="3" fill="#e8ff32"/>
+    <path d="M105 141 h18" stroke="#090a0c" stroke-width="3" stroke-linecap="round"/>
+    <path d="M137 141 h18" stroke="#090a0c" stroke-width="3" stroke-linecap="round"/>
+    <!-- flat unamused mouth -->
+    <path d="M118 186 q12 -3 24 0" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <!-- sigh dots -->
+    <circle cx="182" cy="120" r="3" fill="#8f8b7e"/>
+    <circle cx="194" cy="112" r="4" fill="#8f8b7e"/>
+    <text x="130" y="372" text-anchor="middle" class="cap" fill="#8f8b7e">any day now.</text>
+  </g>
+
+  <!-- ================= 2 · STILL WAITING (checks watch) ================= -->
+  <g transform="translate(260,0)">
+    <rect x="6" y="6" width="248" height="388" rx="18" fill="#0f1115" stroke="#23262d" stroke-width="1.5"/>
+    <text x="22" y="34" class="step">02</text>
+    <ellipse cx="130" cy="250" rx="48" ry="8" fill="#000000" opacity="0.4"/>
+    <path d="M90 176 q-14 4 -12 -14" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <!-- arm up, staring at a wrist watch -->
+    <path d="M168 172 q22 -6 16 -30" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <circle cx="182" cy="140" r="9" fill="#191c22" stroke="#ff5943" stroke-width="2.5"/>
+    <path d="M182 140 l0 -5 M182 140 l4 2" stroke="#ff5943" stroke-width="2" stroke-linecap="round"/>
+    <rect x="90" y="96" width="80" height="140" rx="24" fill="#e8ff32"/>
+    <rect x="98" y="236" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <rect x="140" y="230" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <path d="M150 250 q6 6 14 4" stroke="#8f8b7e" stroke-width="2.5" fill="none" opacity="0.6"/>
+    <!-- side-eye, one brow up -->
+    <path d="M104 136 q10 -6 20 -1" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M138 138 l18 0" stroke="#090a0c" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="118" cy="152" r="8" fill="#090a0c"/>
+    <circle cx="150" cy="152" r="8" fill="#090a0c"/>
+    <circle cx="121" cy="150" r="2.5" fill="#e8ff32"/>
+    <circle cx="153" cy="150" r="2.5" fill="#e8ff32"/>
+    <!-- smirk -->
+    <path d="M116 188 q14 4 26 -3" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <text x="130" y="372" text-anchor="middle" class="cap" fill="#8f8b7e">…anytime.</text>
+  </g>
+
+  <!-- ================= 3 · OH! (perks up) ================= -->
+  <g transform="translate(520,0)">
+    <rect x="6" y="6" width="248" height="388" rx="18" fill="#0f1115" stroke="#23262d" stroke-width="1.5"/>
+    <text x="22" y="34" class="step">03</text>
+    <ellipse cx="130" cy="250" rx="48" ry="8" fill="#000000" opacity="0.4"/>
+    <!-- REC pops on -->
+    <circle cx="130" cy="60" r="8" fill="#ff5943"/>
+    <g stroke="#ff5943" stroke-width="2.5" stroke-linecap="round" opacity="0.8">
+      <path d="M130 42 v-8"/><path d="M148 48 l6 -6"/><path d="M112 48 l-6 -6"/>
+    </g>
+    <!-- arms flung up, alert -->
+    <path d="M90 150 q-18 -10 -14 -32" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <path d="M170 150 q18 -10 14 -32" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <rect x="90" y="96" width="80" height="140" rx="24" fill="#e8ff32"/>
+    <rect x="98" y="236" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <rect x="140" y="236" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <!-- big awake eyes + sparkle -->
+    <circle cx="114" cy="150" r="12" fill="#090a0c"/>
+    <circle cx="146" cy="150" r="12" fill="#090a0c"/>
+    <circle cx="119" cy="145" r="4" fill="#e8ff32"/>
+    <circle cx="151" cy="145" r="4" fill="#e8ff32"/>
+    <!-- raised brows -->
+    <path d="M100 128 q12 -7 24 -2" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M136 126 q12 -5 24 2" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <!-- delighted open smile -->
+    <path d="M114 182 q16 16 32 0 q-16 6 -32 0 z" fill="#090a0c"/>
+    <path d="M122 188 q8 8 16 0" fill="#ff5943"/>
+    <text x="130" y="372" text-anchor="middle" class="cap" fill="#e8ff32">oh! finally—</text>
+  </g>
+
+  <!-- ================= 4 · CAN'T KEEP UP (overwhelmed) ================= -->
+  <g transform="translate(780,0)">
+    <rect x="6" y="6" width="248" height="388" rx="18" fill="#0f1115" stroke="#23262d" stroke-width="1.5"/>
+    <text x="22" y="34" class="step">04</text>
+    <ellipse cx="130" cy="250" rx="48" ry="8" fill="#000000" opacity="0.4"/>
+
+    <!-- firehose of flying words rushing in -->
+    <g opacity="0.9">
+      <line x1="150" y1="86" x2="238" y2="80" stroke="#8f8b7e" stroke-width="1.5" opacity="0.35"/>
+      <line x1="150" y1="104" x2="238" y2="104" stroke="#8f8b7e" stroke-width="1.5" opacity="0.3"/>
+      <line x1="150" y1="122" x2="234" y2="126" stroke="#8f8b7e" stroke-width="1.5" opacity="0.25"/>
+      <rect x="196" y="74" width="34" height="12" rx="3" fill="#e8ff32" opacity="0.5"/>
+      <rect x="172" y="76" width="18" height="10" rx="3" fill="#e8ff32" opacity="0.8"/>
+      <rect x="200" y="98" width="26" height="12" rx="3" fill="#ece6d8" opacity="0.35"/>
+      <rect x="176" y="98" width="18" height="12" rx="3" fill="#e8ff32"/>
+      <rect x="204" y="120" width="30" height="11" rx="3" fill="#e8ff32" opacity="0.4"/>
+      <rect x="180" y="120" width="16" height="11" rx="3" fill="#ece6d8" opacity="0.6"/>
+    </g>
+
+    <!-- ghost arms (motion blur) frantically typing -->
+    <g stroke="#e8ff32" stroke-width="13" stroke-linecap="round" fill="none" opacity="0.25">
+      <path d="M90 176 q-22 14 -18 34"/>
+      <path d="M90 176 q-26 6 -30 24"/>
+      <path d="M170 176 q22 12 20 32"/>
+      <path d="M170 176 q28 4 30 22"/>
+    </g>
+    <!-- main flailing arms -->
+    <path d="M90 174 q-24 10 -24 30" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <path d="M170 174 q24 8 26 28" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+
+    <!-- body, leaning back from the blast -->
+    <g transform="rotate(-7 130 170)">
+      <rect x="90" y="96" width="80" height="140" rx="24" fill="#e8ff32"/>
+      <!-- panic eyes: big whites, tiny high pupils -->
+      <circle cx="114" cy="146" r="13" fill="#ece6d8"/>
+      <circle cx="146" cy="146" r="13" fill="#ece6d8"/>
+      <circle cx="114" cy="141" r="4.5" fill="#090a0c"/>
+      <circle cx="146" cy="141" r="4.5" fill="#090a0c"/>
+      <!-- worried brows -->
+      <path d="M100 126 l22 4" stroke="#090a0c" stroke-width="5" stroke-linecap="round"/>
+      <path d="M160 126 l-22 4" stroke="#090a0c" stroke-width="5" stroke-linecap="round"/>
+      <!-- huge yelling mouth -->
+      <ellipse cx="130" cy="188" rx="17" ry="22" fill="#090a0c"/>
+      <path d="M117 196 q13 16 26 0" fill="#ff5943"/>
+    </g>
+    <!-- flying sweat drops -->
+    <path d="M78 118 q-5 7 0 12 q5 -5 0 -12 z" fill="#ff5943"/>
+    <path d="M186 150 q-5 7 0 12 q5 -5 0 -12 z" fill="#8f8b7e"/>
+    <rect x="98" y="236" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <rect x="140" y="236" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <text x="130" y="372" text-anchor="middle" class="cap" fill="#ff5943">wait— WAIT—</text>
+  </g>
+
+  <!-- ================= 5 · GOT MOST OF IT (wrecked) ================= -->
+  <g transform="translate(1040,0)">
+    <rect x="6" y="6" width="248" height="388" rx="18" fill="#0f1115" stroke="#23262d" stroke-width="1.5"/>
+    <text x="22" y="34" class="step">05</text>
+    <ellipse cx="130" cy="250" rx="48" ry="8" fill="#000000" opacity="0.4"/>
+    <!-- limp arms -->
+    <path d="M90 182 q-16 10 -12 26" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <path d="M170 182 q16 10 12 26" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <!-- slightly slumped body -->
+    <g transform="rotate(4 130 170)">
+      <rect x="90" y="100" width="80" height="136" rx="24" fill="#e8ff32"/>
+      <!-- dizzy X eyes -->
+      <path d="M107 146 l14 12 M121 146 l-14 12" stroke="#090a0c" stroke-width="5" stroke-linecap="round"/>
+      <path d="M139 146 l14 12 M153 146 l-14 12" stroke="#090a0c" stroke-width="5" stroke-linecap="round"/>
+      <!-- worn-out wobbly mouth + tongue -->
+      <path d="M114 190 q8 -6 16 0 q8 6 16 0" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+      <ellipse cx="140" cy="198" rx="6" ry="8" fill="#ff5943"/>
+    </g>
+    <!-- a couple of stray letters that got away, piled -->
+    <rect x="150" y="230" width="26" height="12" rx="3" fill="#e8ff32" opacity="0.5" transform="rotate(-14 163 236)"/>
+    <rect x="86" y="232" width="20" height="11" rx="3" fill="#ece6d8" opacity="0.4" transform="rotate(10 96 237)"/>
+    <!-- one last sweat drop -->
+    <path d="M176 120 q-5 7 0 12 q5 -5 0 -12 z" fill="#8f8b7e"/>
+    <rect x="98" y="236" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <rect x="140" y="236" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <text x="130" y="372" text-anchor="middle" class="cap" fill="#8f8b7e">…got most of it.</text>
+  </g>
+</svg>

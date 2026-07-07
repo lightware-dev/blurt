@@ -1,0 +1,129 @@
+<svg width="1200" height="340" viewBox="0 0 1200 340" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .lbl { font-family:'JetBrains Mono',monospace,monospace; font-size:14px; letter-spacing:0.04em; }
+  </style>
+
+  <!-- ============ IDLE ============ -->
+  <g transform="translate(0,0)">
+    <rect x="8" y="8" width="224" height="324" rx="16" fill="#0f1115" stroke="#23262d" stroke-width="1.5"/>
+    <ellipse cx="120" cy="226" rx="46" ry="8" fill="#000000" opacity="0.4"/>
+    <!-- arms relaxed -->
+    <path d="M80 156 q-12 8 -12 24" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <path d="M160 156 q12 8 12 24" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <!-- body -->
+    <rect x="80" y="70" width="80" height="140" rx="24" fill="#e8ff32"/>
+    <rect x="88" y="210" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <rect x="130" y="210" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <!-- sleepy neutral eyes, glancing -->
+    <circle cx="104" cy="120" r="8" fill="#090a0c"/>
+    <circle cx="136" cy="120" r="8" fill="#090a0c"/>
+    <circle cx="107" cy="118" r="2.5" fill="#e8ff32"/>
+    <circle cx="139" cy="118" r="2.5" fill="#e8ff32"/>
+    <path d="M112 154 q8 5 16 0" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <!-- blinking waiting caret -->
+    <rect x="170" y="110" width="8" height="26" rx="2" fill="#ece6d8" opacity="0.75"/>
+    <text x="120" y="312" text-anchor="middle" class="lbl" fill="#8f8b7e">idle</text>
+  </g>
+
+  <!-- ============ LISTENING ============ -->
+  <g transform="translate(240,0)">
+    <rect x="8" y="8" width="224" height="324" rx="16" fill="#0f1115" stroke="#23262d" stroke-width="1.5"/>
+    <ellipse cx="120" cy="226" rx="46" ry="8" fill="#000000" opacity="0.4"/>
+    <!-- REC light above -->
+    <circle cx="120" cy="46" r="13" fill="none" stroke="#ff5943" stroke-width="2" opacity="0.45"/>
+    <circle cx="120" cy="46" r="7" fill="#ff5943"/>
+    <!-- arms: one cupped up, one down -->
+    <path d="M80 156 q-12 8 -12 24" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <path d="M162 132 q22 -2 18 -24" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <rect x="80" y="70" width="80" height="140" rx="24" fill="#e8ff32"/>
+    <rect x="88" y="210" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <rect x="130" y="210" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <!-- raised brows -->
+    <path d="M92 102 q10 -6 22 -1" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M126 101 q11 -5 22 1" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <!-- wide alert eyes -->
+    <circle cx="104" cy="122" r="11" fill="#090a0c"/>
+    <circle cx="136" cy="122" r="11" fill="#090a0c"/>
+    <circle cx="108" cy="118" r="3.5" fill="#e8ff32"/>
+    <circle cx="140" cy="118" r="3.5" fill="#e8ff32"/>
+    <!-- small 'o' mouth -->
+    <circle cx="120" cy="156" r="6" fill="#090a0c"/>
+    <text x="120" y="312" text-anchor="middle" class="lbl" fill="#8f8b7e">listening</text>
+  </g>
+
+  <!-- ============ THINKING ============ -->
+  <g transform="translate(480,0)">
+    <rect x="8" y="8" width="224" height="324" rx="16" fill="#0f1115" stroke="#23262d" stroke-width="1.5"/>
+    <ellipse cx="120" cy="226" rx="46" ry="8" fill="#000000" opacity="0.4"/>
+    <path d="M80 156 q-12 8 -12 24" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <!-- arm bent up to 'chin' -->
+    <path d="M160 158 q16 -2 12 -18" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <rect x="80" y="70" width="80" height="140" rx="24" fill="#e8ff32"/>
+    <rect x="88" y="210" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <rect x="130" y="210" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <!-- brows: one quizzical -->
+    <path d="M92 106 l22 -3" stroke="#090a0c" stroke-width="5" stroke-linecap="round"/>
+    <path d="M126 100 q11 -3 22 3" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <!-- eyes looking up -->
+    <circle cx="104" cy="122" r="9" fill="#090a0c"/>
+    <circle cx="136" cy="122" r="9" fill="#090a0c"/>
+    <circle cx="104" cy="117" r="3" fill="#e8ff32"/>
+    <circle cx="136" cy="117" r="3" fill="#e8ff32"/>
+    <!-- pensive mouth -->
+    <path d="M108 158 q13 3 24 -3" stroke="#090a0c" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <!-- rising thought dots -->
+    <circle cx="150" cy="86" r="4" fill="#e8ff32"/>
+    <circle cx="166" cy="74" r="5" fill="#e8ff32"/>
+    <circle cx="184" cy="60" r="6.5" fill="#e8ff32"/>
+    <text x="120" y="312" text-anchor="middle" class="lbl" fill="#8f8b7e">thinking</text>
+  </g>
+
+  <!-- ============ BLURTING ============ -->
+  <g transform="translate(720,0)">
+    <rect x="8" y="8" width="224" height="324" rx="16" fill="#0f1115" stroke="#23262d" stroke-width="1.5"/>
+    <ellipse cx="120" cy="226" rx="46" ry="8" fill="#000000" opacity="0.4"/>
+    <!-- sound waves -->
+    <g stroke="#ff5943" stroke-width="6" stroke-linecap="round" fill="none">
+      <path d="M176 138 q15 11 0 32"/>
+      <path d="M191 130 q26 18 0 48"/>
+    </g>
+    <path d="M206 123 q34 23 0 62" stroke="#8f8b7e" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.65"/>
+    <!-- arms out -->
+    <path d="M80 150 q-16 3 -20 20" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <path d="M160 150 q16 3 18 18" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <rect x="80" y="70" width="80" height="140" rx="24" fill="#e8ff32"/>
+    <rect x="88" y="210" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <rect x="130" y="210" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <!-- determined brows -->
+    <path d="M92 108 l22 6" stroke="#090a0c" stroke-width="6" stroke-linecap="round"/>
+    <path d="M148 108 l-22 6" stroke="#090a0c" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="104" cy="126" r="8" fill="#090a0c"/>
+    <circle cx="136" cy="126" r="8" fill="#090a0c"/>
+    <circle cx="107" cy="123" r="2.5" fill="#e8ff32"/>
+    <circle cx="139" cy="123" r="2.5" fill="#e8ff32"/>
+    <!-- open blurting mouth -->
+    <ellipse cx="120" cy="160" rx="15" ry="19" fill="#090a0c"/>
+    <path d="M108 168 q12 14 24 0" fill="#ff5943"/>
+    <text x="120" y="312" text-anchor="middle" class="lbl" fill="#e8ff32">blurting!</text>
+  </g>
+
+  <!-- ============ DONE ============ -->
+  <g transform="translate(960,0)">
+    <rect x="8" y="8" width="224" height="324" rx="16" fill="#0f1115" stroke="#23262d" stroke-width="1.5"/>
+    <ellipse cx="120" cy="226" rx="46" ry="8" fill="#000000" opacity="0.4"/>
+    <!-- arms up, pleased -->
+    <path d="M80 150 q-18 -6 -16 -26" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <path d="M160 150 q18 -6 16 -26" stroke="#e8ff32" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <rect x="80" y="70" width="80" height="140" rx="24" fill="#e8ff32"/>
+    <rect x="88" y="210" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <rect x="130" y="210" width="22" height="12" rx="6" fill="#e8ff32"/>
+    <!-- happy closed eyes -->
+    <path d="M94 124 q10 -11 20 0" stroke="#090a0c" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <path d="M126 124 q10 -11 20 0" stroke="#090a0c" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <!-- big smile -->
+    <path d="M102 150 q18 18 36 0" stroke="#090a0c" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <!-- typed check -->
+    <path d="M150 70 l10 10 20 -22" stroke="#e8ff32" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <text x="120" y="312" text-anchor="middle" class="lbl" fill="#8f8b7e">done ✓</text>
+  </g>
+</svg>
