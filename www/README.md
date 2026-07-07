@@ -30,8 +30,8 @@ messy, disfluent sentence and then snaps it to clean composed text, which *is*
 the product's whole promise ("say it badly, get it typed well").
 
 The tone leans into how crowded the space is ("yet another dictation app") rather
-than pretending to be revolutionary. Copy voice + rationale live in the repo-root
-`branding.md`.
+than pretending to be revolutionary. Copy voice + rationale live in
+`../docs/branding.md`.
 
 ## TODO before launch
 
