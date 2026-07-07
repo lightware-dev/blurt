@@ -49,7 +49,7 @@ Override the signing identity with `SIGN_IDENTITY=...`.
 uploads it as a zipped Actions artifact. On pushes to `main` and manual dispatch
 it produces a **signed + notarized + stapled** build; PRs and forks fall back to
 an ad-hoc signature (so it still verifies it compiles). Path-filtered to
-`client-mac/**`.
+`clients/mac/**`.
 
 **Cutting a release.** Bump `CFBundleShortVersionString` in `Info.plist`, then
 push a matching `v*` tag:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds, Developer ID-signs, notarizes, and staples Blurt.app, producing a
-# distributable zip in client-mac/dist/ that passes Gatekeeper on any Mac
+# distributable zip in clients/mac/dist/ that passes Gatekeeper on any Mac
 # (not just this one).
 #
 # This is the "ship it" path; ./build-app.sh alone is fine for local runs.
@@ -69,4 +69,4 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 xcrun stapler validate "$APP"
 spctl -a -vvv -t exec "$APP"
 
-echo "==> done: client-mac/$DIST_ZIP (notarized + stapled)"
+echo "==> done: clients/mac/$DIST_ZIP (notarized + stapled)"

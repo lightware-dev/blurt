@@ -10,9 +10,9 @@ __pycache__/
 certs/
 
 # Swift / macOS build artifacts
-client-mac/.build/
-client-mac/Blurt.app/
-client-mac/dist/
+clients/mac/.build/
+clients/mac/Blurt.app/
+clients/mac/dist/
 .DS_Store
 
 # Signing material must never be committed — keep it in a password manager.

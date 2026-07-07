@@ -9,7 +9,7 @@ Two parts:
 - **`server/`** — a lean NVIDIA **Parakeet** streaming ASR server (Python + NeMo)
   that runs on this Linux box's RTX 5090. Modest VRAM (~2.3 GB, bf16), low WER,
   near-realtime live partials over a WebSocket.
-- **`client-mac/`** — a native **macOS menu-bar app** (Swift, universal
+- **`clients/mac/`** — a native **macOS menu-bar app** (Swift, universal
   arm64 + x86_64). A global hotkey toggles dictation; live text shows in a HUD;
   the final transcript is typed into whatever field has focus.
 
@@ -90,7 +90,7 @@ Unzip, drag **Blurt.app** to `/Applications`, and open it — it's a universal
 Built on the Mac (needs Xcode command-line tools):
 
 ```bash
-cd client-mac
+cd clients/mac
 ./build-app.sh        # universal arm64 + x86_64 → Blurt.app (Developer ID or ad-hoc signed)
 open Blurt.app
 
@@ -99,14 +99,14 @@ open Blurt.app
 
 Set the server URL from the menu-bar icon (▸ *Set Server URL…* →
 `wss://<linux-ip>:7860/ws`), grant **Microphone** and **Accessibility** when
-prompted, then press **⌥Space** to dictate. See `client-mac/README.md` for details
+prompted, then press **⌥Space** to dictate. See `clients/mac/README.md` for details
 (including notarized distribution).
 
 ## Files
 
 ```
 server/            Parakeet streaming server (asr, vad, app, models, __main__)
-client-mac/        Swift menu-bar app + build-app.sh + notarize.sh
+clients/mac/       Swift menu-bar app + build-app.sh + notarize.sh
 static/            browser mic test page (index.html, pcm-worklet.js)
 scripts/           verify_asr.py, ws_client_test.py, generate_samples.py
 certs/             self-signed TLS for wss:// on the LAN

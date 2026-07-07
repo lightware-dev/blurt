@@ -6,7 +6,7 @@ name: Build macOS app
 # signature so the build still verifies. Pushing a `v*` tag additionally publishes a GitHub
 # Release with the zip attached.
 #
-# Path-filtered to `client-mac/**` so it doesn't burn (10x-priced) macOS runner minutes on
+# Path-filtered to `clients/mac/**` so it doesn't burn (10x-priced) macOS runner minutes on
 # server/www-only pushes. NOTE: path filters are ignored for tag pushes, so `v*` tags always
 # run — exactly what we want for cutting a release.
 on:
@@ -16,11 +16,11 @@ on:
         tags:
             - 'v*'
         paths:
-            - 'client-mac/**'
+            - 'clients/mac/**'
             - '.github/workflows/mac.yml'
     pull_request:
         paths:
-            - 'client-mac/**'
+            - 'clients/mac/**'
             - '.github/workflows/mac.yml'
     workflow_dispatch:
 
@@ -75,9 +75,9 @@ jobs:
                       echo "::error::Release tag pushed but signing secrets are missing — refusing to publish an un-notarized build." >&2
                       exit 1
                   fi
-                  VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' client-mac/Info.plist)"
+                  VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' clients/mac/Info.plist)"
                   if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
-                      echo "::error::Tag $GITHUB_REF_NAME does not match bundle version v$VERSION (set CFBundleShortVersionString in client-mac/Info.plist)." >&2
+                      echo "::error::Tag $GITHUB_REF_NAME does not match bundle version v$VERSION (set CFBundleShortVersionString in clients/mac/Info.plist)." >&2
                       exit 1
                   fi
 
@@ -113,7 +113,7 @@ jobs:
 
             - name: build, sign, notarize, staple
               if: steps.cfg.outputs.signed == 'true'
-              working-directory: client-mac
+              working-directory: clients/mac
               env:
                   SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
                   NOTARY_KEY: ${{ runner.temp }}/notary.p8
@@ -124,7 +124,7 @@ jobs:
             # ---- ad-hoc fallback (no secrets / PR) ----
             - name: build (ad-hoc)
               if: steps.cfg.outputs.signed == 'false'
-              working-directory: client-mac
+              working-directory: clients/mac
               run: |
                   set -euo pipefail
                   ./build-app.sh
@@ -137,7 +137,7 @@ jobs:
               id: artifact
               run: |
                   set -euo pipefail
-                  ZIP="$(ls client-mac/dist/*.zip | head -1)"
+                  ZIP="$(ls clients/mac/dist/*.zip | head -1)"
                   echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
                   echo "name=$(basename "${ZIP%.zip}")-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
@@ -163,9 +163,9 @@ jobs:
                   ZIP="${{ steps.artifact.outputs.zip }}"
                   # A stable, version-less copy so the website can link a fixed URL:
                   #   https://github.com/${{ github.repository }}/releases/latest/download/Blurt-macOS.zip
-                  cp "$ZIP" "client-mac/dist/Blurt-macOS.zip"
+                  cp "$ZIP" "clients/mac/dist/Blurt-macOS.zip"
                   gh release create "$GITHUB_REF_NAME" \
-                      "$ZIP" "client-mac/dist/Blurt-macOS.zip" \
+                      "$ZIP" "clients/mac/dist/Blurt-macOS.zip" \
                       --repo "$GITHUB_REPOSITORY" \
                       --title "Blurt $GITHUB_REF_NAME" \
                       --generate-notes
