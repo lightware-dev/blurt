@@ -30,4 +30,10 @@ enum Settings {
         get { (d.object(forKey: "hotKeyMods") as? NSNumber)?.uint32Value ?? UInt32(optionKey) }
         set { d.set(NSNumber(value: newValue), forKey: "hotKeyMods") }
     }
+
+    /// Whether the first-run permissions screen has been dismissed at least once.
+    static var didOnboard: Bool {
+        get { d.bool(forKey: "didOnboard") }
+        set { d.set(newValue, forKey: "didOnboard") }
+    }
 }

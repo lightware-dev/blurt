@@ -1,17 +1,23 @@
 import AppKit
 
 /// A small borderless, click-through overlay near the bottom of the screen that
-/// shows live partial transcription while dictating.
+/// shows live partial transcription while dictating. Styled to match the website's
+/// HUD (see `www` — the animated demo box): near-black ink pill, a glowing coral
+/// rec dot, and the live text in mono.
 final class HUD {
     private var window: NSWindow?
     private let label = NSTextField(labelWithString: "")
+    private let dot = NSView()
+
+    private let size = NSSize(width: 560, height: 76)
 
     func show(_ text: String) {
         DispatchQueue.main.async {
             if self.window == nil { self.build() }
             let isPlaceholder = text.isEmpty
             self.label.stringValue = isPlaceholder ? "Listening…" : text
-            self.label.textColor = isPlaceholder ? NSColor(white: 1, alpha: 0.4) : .white
+            self.label.font = isPlaceholder ? Brand.mono(17) : Brand.mono(18, .medium)
+            self.label.textColor = isPlaceholder ? Brand.boneDim : Brand.bone
             self.position()
             self.window?.orderFrontRegardless()
         }
@@ -22,7 +28,7 @@ final class HUD {
     }
 
     private func build() {
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 90),
+        let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                          styleMask: .borderless, backing: .buffered, defer: false)
         w.level = .statusBar
         w.isOpaque = false
@@ -33,26 +39,44 @@ final class HUD {
 
         let container = NSView()
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.92).cgColor
-        container.layer?.cornerRadius = 16
-        container.layer?.masksToBounds = true   // clip the label to the box
+        container.layer?.backgroundColor = Brand.ink900.withAlphaComponent(0.95).cgColor
+        container.layer?.cornerRadius = 18
+        container.layer?.borderWidth = 1
+        container.layer?.borderColor = Brand.ink700.cgColor
+        container.layer?.masksToBounds = true
 
-        label.font = .systemFont(ofSize: 19, weight: .medium)
-        label.textColor = .white
+        // Glowing coral rec dot, like the demo's "Blurting…" indicator.
+        dot.wantsLayer = true
+        dot.layer?.backgroundColor = Brand.coral.cgColor
+        dot.layer?.cornerRadius = 5
+        dot.layer?.shadowColor = Brand.coral.cgColor
+        dot.layer?.shadowOpacity = 0.9
+        dot.layer?.shadowRadius = 6
+        dot.layer?.shadowOffset = .zero
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(dot)
+
+        label.font = Brand.mono(18, .medium)
+        label.textColor = Brand.bone
         // Single line, fixed width: truncate the *head* so the most recent words
         // stay visible on the right and older text scrolls off the left with an "…".
         label.maximumNumberOfLines = 1
         label.lineBreakMode = .byTruncatingHead
         label.usesSingleLineMode = true
         label.cell?.truncatesLastVisibleLine = true
-        // Let the label shrink/truncate rather than push the box wider.
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         label.setContentHuggingPriority(.defaultLow, for: .horizontal)
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
+
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+            dot.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22),
+            dot.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            dot.widthAnchor.constraint(equalToConstant: 10),
+            dot.heightAnchor.constraint(equalToConstant: 10),
+
+            label.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 14),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -22),
             label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
         w.contentView = container
@@ -61,7 +85,6 @@ final class HUD {
 
     private func position() {
         guard let w = window, let screen = NSScreen.main else { return }
-        let size = NSSize(width: 560, height: 90)
         let x = screen.frame.midX - size.width / 2
         let y = screen.frame.minY + 140
         w.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)

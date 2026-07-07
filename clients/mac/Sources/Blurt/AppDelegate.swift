@@ -11,12 +11,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let client = DictationClient()
     private let hud = HUD()
     private var recording = false
+    private var onboarding: OnboardingWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         wire()
         setupHotKey()
-        requestPermissions()
+        // Show the first-run permissions screen until the user has seen it *and*
+        // Accessibility is actually granted (without it Blurt can't type anything).
+        if !Settings.didOnboard || !AXIsProcessTrusted() {
+            showOnboarding()
+        } else {
+            AVCaptureDevice.requestAccess(for: .audio) { _ in }
+        }
     }
 
     // MARK: menu bar
@@ -28,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         add(menu, "Start / Stop Blurting  (⌥Space)", #selector(toggle))
         menu.addItem(.separator())
+        add(menu, "Setup & Permissions…", #selector(showOnboarding))
         add(menu, "Set Server URL…", #selector(setServer))
         add(menu, "Set Auth Token…", #selector(setToken))
         let inject = NSMenuItem(title: "Insert via Typing (not Paste)",
@@ -82,11 +90,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func requestPermissions() {
-        AVCaptureDevice.requestAccess(for: .audio) { _ in }
-        // Prompt for Accessibility (needed to inject keystrokes into other apps).
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(opts)
+    @objc private func showOnboarding() {
+        if onboarding == nil {
+            let controller = OnboardingWindowController()
+            controller.onClose = { [weak self] in
+                Settings.didOnboard = true
+                self?.onboarding = nil
+            }
+            onboarding = controller
+        }
+        onboarding?.present()
     }
 
     // MARK: dictation state machine

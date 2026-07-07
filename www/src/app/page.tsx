@@ -5,7 +5,6 @@ const GITHUB = 'https://github.com/blurtvoice/blurt'
 // The real, crowded field. We are, technically, competing with all of these.
 const RIVALS = [
     'Whisper',
-    'Wispr',
     'Wispr Flow',
     'Superwhisper',
     'Openwhispr',
