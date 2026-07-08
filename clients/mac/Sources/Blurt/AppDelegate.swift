@@ -6,6 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var injectItem: NSMenuItem?
     private var hotKey: HotKey?
+    // Registered only while recording so it never swallows Esc globally otherwise.
+    private var cancelKey: HotKey?
 
     private let audio = AudioCapture()
     private let client = DictationClient()
@@ -121,19 +123,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         recording = true
         updateIcon()
+        // Esc discards the in-flight dictation. Registered per-session so we only
+        // capture Esc while actually listening. keyCode 53 = Escape, no modifiers.
+        cancelKey = HotKey(keyCode: 53, modifiers: 0, id: 2) { [weak self] in self?.cancel() }
         hud.show("")   // empty → HUD shows its faded "Listening…" placeholder
     }
 
     private func stopRecording() {
         guard recording else { return }
         recording = false
+        cancelKey = nil
         updateIcon()
         audio.stop()
         client.stop()          // server replies with {final}; onFinal injects + closes
     }
 
+    /// Discard the in-flight dictation: stop without asking the server to finalize,
+    /// so nothing gets injected. Bound to Esc.
+    private func cancel() {
+        guard recording else { return }
+        forceStop()
+        hud.flash("Cancelled")
+    }
+
     private func forceStop() {
         recording = false
+        cancelKey = nil
         updateIcon()
         audio.stop()
         client.close()

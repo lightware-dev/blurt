@@ -24,6 +24,8 @@ internal sealed class BlurtApp : IDisposable
     private ToolStripMenuItem? _injectItem;
     private ToolStripMenuItem? _startupItem;
     private HotKey? _hotKey;
+    // Registered only while recording so it never swallows Esc globally otherwise.
+    private HotKey? _cancelKey;
     private Icon? _currentIcon;
 
     private bool _recording;
@@ -144,6 +146,9 @@ internal sealed class BlurtApp : IDisposable
         }
         _recording = true;
         UpdateIcon();
+        // Esc discards the in-flight dictation. Registered per-session so we only
+        // capture Esc while actually listening.
+        _cancelKey = HotKey.Escape(() => _ui.Invoke(Cancel));
         _hud.Show(""); // empty → HUD shows its faded "Listening…" placeholder
     }
 
@@ -151,17 +156,34 @@ internal sealed class BlurtApp : IDisposable
     {
         if (!_recording) return;
         _recording = false;
+        DisposeCancelKey();
         UpdateIcon();
         _audio.Stop();
         _client.Stop(); // server replies with {final}; OnFinal injects + closes
     }
 
+    /// Discard the in-flight dictation: stop without asking the server to finalize,
+    /// so nothing gets injected. Bound to Esc.
+    private void Cancel()
+    {
+        if (!_recording) return;
+        ForceStop();
+        _hud.Flash("Cancelled");
+    }
+
     private void ForceStop()
     {
         _recording = false;
+        DisposeCancelKey();
         UpdateIcon();
         _audio.Stop();
         _client.Close();
+    }
+
+    private void DisposeCancelKey()
+    {
+        _cancelKey?.Dispose();
+        _cancelKey = null;
     }
 
     // MARK: menu actions
@@ -230,6 +252,7 @@ internal sealed class BlurtApp : IDisposable
     public void Dispose()
     {
         _hotKey?.Dispose();
+        DisposeCancelKey();
         _audio.Dispose();
         _client.Close();
         if (_tray is not null) { _tray.Visible = false; _tray.Dispose(); _tray = null; }

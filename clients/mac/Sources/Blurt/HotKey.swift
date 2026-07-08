@@ -8,7 +8,7 @@ final class HotKey {
     private var handlerRef: EventHandlerRef?
     private let onFire: () -> Void
 
-    init?(keyCode: UInt32, modifiers: UInt32, onFire: @escaping () -> Void) {
+    init?(keyCode: UInt32, modifiers: UInt32, id: UInt32 = 1, onFire: @escaping () -> Void) {
         self.onFire = onFire
 
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
@@ -26,7 +26,7 @@ final class HotKey {
             1, &spec, selfPtr, &handlerRef)
         if installStatus != noErr { return nil }
 
-        let hotID = EventHotKeyID(signature: OSType(0x56444B31) /* 'VDK1' */, id: 1)
+        let hotID = EventHotKeyID(signature: OSType(0x56444B31) /* 'VDK1' */, id: id)
         let regStatus = RegisterEventHotKey(keyCode, modifiers, hotID,
                                             GetApplicationEventTarget(), 0, &ref)
         if regStatus != noErr { return nil }

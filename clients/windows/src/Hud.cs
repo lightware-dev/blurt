@@ -5,6 +5,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 
 namespace Blurt;
 
@@ -23,9 +24,13 @@ internal sealed class Hud
 
     private Window? _window;
     private TextBlock? _label;
+    // Bumped on every show/hide so a scheduled flash auto-hide only fires if no
+    // newer session has taken over the HUD in the meantime.
+    private int _generation;
 
     public void Show(string text)
     {
+        _generation++;
         Ensure();
         var placeholder = string.IsNullOrEmpty(text);
         var label = _label!;
@@ -38,7 +43,36 @@ internal sealed class Hud
         _window!.Show();
     }
 
-    public void Hide() => _window?.Hide();
+    public void Hide()
+    {
+        _generation++;
+        _window?.Hide();
+    }
+
+    /// Briefly show a dimmed status message (e.g. "Cancelled"), then auto-hide —
+    /// unless a newer session has since taken over the HUD.
+    public void Flash(string text)
+    {
+        _generation++;
+        var token = _generation;
+        Ensure();
+        var label = _label!;
+        label.Text = text;
+        label.FontSize = 17;
+        label.FontWeight = FontWeights.Normal;
+        label.Foreground = Brand.BoneDimBrush;
+
+        Position();
+        _window!.Show();
+
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (_generation == token) _window?.Hide();
+        };
+        timer.Start();
+    }
 
     private static string Tail(string s) =>
         s.Length <= MaxChars ? s : "…" + s[^MaxChars..];

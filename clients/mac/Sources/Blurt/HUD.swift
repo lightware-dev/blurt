@@ -10,9 +10,13 @@ final class HUD {
     private let dot = NSView()
 
     private let size = NSSize(width: 560, height: 76)
+    // Bumped on every show/hide so a scheduled flash auto-hide only fires if no
+    // newer session has taken over the HUD in the meantime.
+    private var generation = 0
 
     func show(_ text: String) {
         DispatchQueue.main.async {
+            self.generation += 1
             if self.window == nil { self.build() }
             let isPlaceholder = text.isEmpty
             self.label.stringValue = isPlaceholder ? "Listening…" : text
@@ -24,7 +28,28 @@ final class HUD {
     }
 
     func hide() {
-        DispatchQueue.main.async { self.window?.orderOut(nil) }
+        DispatchQueue.main.async {
+            self.generation += 1
+            self.window?.orderOut(nil)
+        }
+    }
+
+    /// Briefly show a dimmed status message (e.g. "Cancelled"), then auto-hide —
+    /// unless a newer session has since taken over the HUD.
+    func flash(_ text: String) {
+        DispatchQueue.main.async {
+            self.generation += 1
+            let token = self.generation
+            if self.window == nil { self.build() }
+            self.label.stringValue = text
+            self.label.font = Brand.mono(17)
+            self.label.textColor = Brand.boneDim
+            self.position()
+            self.window?.orderFrontRegardless()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                if self.generation == token { self.window?.orderOut(nil) }
+            }
+        }
     }
 
     private func build() {

@@ -15,6 +15,7 @@ internal sealed class HotKey : IDisposable
     private const uint MOD_SHIFT = 0x0004;
     private const uint MOD_NOREPEAT = 0x4000; // fire once per press, not on auto-repeat
     public const uint VK_SPACE = 0x20;
+    public const uint VK_ESCAPE = 0x1B;
 
     [DllImport("user32.dll")]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -23,15 +24,16 @@ internal sealed class HotKey : IDisposable
 
     private readonly HwndSource _source;
     private readonly Action _onFire;
-    private const int Id = 0x42_31; // 'B1'
+    private readonly int _id;
 
     /// True when the OS accepted the registration. Null-returning ctor would be
     /// un-C#; callers check this instead (mirrors the Swift init? contract).
     public bool Registered { get; }
 
-    public HotKey(uint modifiers, uint virtualKey, Action onFire)
+    public HotKey(uint modifiers, uint virtualKey, Action onFire, int id = 0x42_31 /* 'B1' */)
     {
         _onFire = onFire;
+        _id = id;
 
         // A zero-size, never-shown top-level window is enough to receive WM_HOTKEY.
         var parameters = new HwndSourceParameters("BlurtHotKeySink")
@@ -43,16 +45,20 @@ internal sealed class HotKey : IDisposable
         _source = new HwndSource(parameters);
         _source.AddHook(WndProc);
 
-        Registered = RegisterHotKey(_source.Handle, Id, modifiers | MOD_NOREPEAT, virtualKey);
+        Registered = RegisterHotKey(_source.Handle, _id, modifiers | MOD_NOREPEAT, virtualKey);
     }
 
     /// Convenience for the app's default chord: Ctrl+Alt+Space.
     public static HotKey CtrlAltSpace(Action onFire) =>
         new(MOD_CONTROL | MOD_ALT, VK_SPACE, onFire);
 
+    /// Bare Esc, used per-session to discard an in-flight dictation.
+    public static HotKey Escape(Action onFire) =>
+        new(0, VK_ESCAPE, onFire, id: 0x42_32 /* 'B2' */);
+
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == WM_HOTKEY && wParam.ToInt32() == Id)
+        if (msg == WM_HOTKEY && wParam.ToInt32() == _id)
         {
             _onFire();
             handled = true;
@@ -62,7 +68,7 @@ internal sealed class HotKey : IDisposable
 
     public void Dispose()
     {
-        if (Registered) UnregisterHotKey(_source.Handle, Id);
+        if (Registered) UnregisterHotKey(_source.Handle, _id);
         _source.RemoveHook(WndProc);
         _source.Dispose();
     }
