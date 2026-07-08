@@ -57,6 +57,50 @@ Config (env or `.env`, all optional): `PARAKEET_MODEL`, `PARAKEET_FP32`, `HOST`,
 `PORT`, `AUTH_TOKEN`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`. See
 `.env.example`.
 
+### Docker
+
+A `Dockerfile` (and `docker-compose.yml`) ship the daemon as a GPU container.
+The image installs `torch==2.12.1+cu130` from the PyTorch index — the cu130
+wheels bundle the CUDA + cuDNN runtime, so there's no CUDA base image; the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+injects your host driver at run time (`--gpus all`).
+
+```bash
+docker build -t blurtd .
+docker run --gpus all -p 7860:7860 -v blurt-cache:/root/.cache blurtd
+#   append flags like a bare invocation:  docker run … blurtd -m v2 --port 8000
+# or:
+docker compose up --build
+```
+
+Models are pulled from HuggingFace on first run into `/root/.cache` — the
+`blurt-cache` volume above persists them so you don't re-download on restart.
+
+**TLS is automatic.** Browsers block LAN mic access over plain `ws://`, so the
+entrypoint auto-generates a self-signed cert on first start and serves `wss://`
+out of the box (the Mac client trusts it; a browser prompts once). The cert also
+lives in `blurt-cache`, so its fingerprint is stable across restarts. Bring your
+own by mounting `-v ./certs:/app/certs:ro`, or set `BLURT_AUTOCERT=0` to fall
+back to `ws://`. Full smoke test once it's up: `python scripts/ws_client_test.py
+audio/clean.wav`.
+
+**Supported GPUs.** The image runs on any NVIDIA consumer card from the
+**RTX 20-series (and GTX 16-series) through the RTX 50-series** — the torch
+wheel carries native `sm_75/86/90/100/120` kernels, and CUDA minor-version
+compatibility covers Ada (RTX 40-series) via the `sm_86` binaries.
+
+| Architecture | Consumer GPUs                        | Runs via              |
+| ------------ | ------------------------------------ | --------------------- |
+| Turing       | GTX 1650/1660, RTX 2060–2080 Ti      | native `sm_75`        |
+| Ampere       | RTX 3050–3090 Ti                     | native `sm_86`        |
+| Ada Lovelace | RTX 4060–4090                        | `sm_86` (minor-compat)|
+| Blackwell    | RTX 5060–5090                        | native `sm_120`       |
+
+Two host-side caveats: the bundled CUDA 13.0 runtime needs **driver ≥ 580**
+(upgrade even a listed card on an older branch), and **Pascal and older**
+(GTX 10-series, Titan V) are unsupported — no matching kernel, so they fail with
+a "no kernel image" error. VRAM is a non-issue: the models are ~0.5–2.5 GB.
+
 ### WebSocket protocol
 
 Client → server: `{"type":"start"}`, then binary 16 kHz mono PCM16 frames, then
@@ -111,4 +155,6 @@ static/            browser mic test page (index.html, pcm-worklet.js)
 scripts/           verify_asr.py, ws_client_test.py, generate_samples.py
 certs/             self-signed TLS for wss:// on the LAN
 audio/             sample wavs
+Dockerfile         GPU container for blurtd (torch cu130 + NeMo)
+docker-compose.yml one-command run with GPU + model-cache volume
 ```

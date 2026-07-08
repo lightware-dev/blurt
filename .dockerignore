@@ -1,0 +1,25 @@
+# Only server/, static/, blurtd and requirements.txt are needed for the image.
+# Everything below is either huge, host-specific, or unrelated to the daemon.
+
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets / local TLS — mount at run time, never bake in.
+.env
+certs/
+
+# Clients, website, docs, samples, scratch.
+clients/
+www/
+docs/
+audio/
+scripts/
+.github/
+
+# VCS / editor.
+.git/
+.gitignore
+.claude/
+*.md
+!README.md

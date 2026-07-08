@@ -1,0 +1,31 @@
+# blurtd — Parakeet dictation daemon.
+#
+#   docker compose up --build       # v3 multilingual on :7860
+#
+# Needs the NVIDIA Container Toolkit on the host (`--gpus all` equivalent).
+services:
+  blurtd:
+    build: .
+    image: blurtd
+    ports:
+      - "7860:7860"
+    volumes:
+      # Persists HuggingFace/NeMo model downloads *and* the auto-generated
+      # self-signed TLS cert across restarts.
+      - blurt-cache:/root/.cache
+      # Serves wss:// out of the box via an auto-generated cert. Mount your own
+      # here to override it (see scripts/gen_certs.sh):
+      # - ./certs:/app/certs:ro
+    environment:
+      # See .env.example for the full list. A few common ones:
+      # PARAKEET_MODEL: v3      # v3 (default) | v2 | 1.1b | ctc-110m
+      # AUTH_TOKEN: changeme    # require ?token=… on the ws connection
+      # BLURT_AUTOCERT: "0"     # disable the auto cert, fall back to plain ws://
+      HOST: 0.0.0.0
+      PORT: "7860"
+    # GPU access. Requires the NVIDIA Container Toolkit.
+    gpus: all
+    restart: unless-stopped
+
+volumes:
+  blurt-cache:
