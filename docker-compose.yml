@@ -1,6 +1,6 @@
 # blurtd — Parakeet dictation daemon.
 #
-#   docker compose up --build       # v3 multilingual on :7860
+#   docker compose up --build       # v3 multilingual on :25878
 #
 # Needs the NVIDIA Container Toolkit on the host (`--gpus all` equivalent).
 services:
@@ -8,7 +8,7 @@ services:
     build: .
     image: blurtd
     ports:
-      - "7860:7860"
+      - "25878:25878"
     volumes:
       # Persists HuggingFace/NeMo model downloads *and* the auto-generated
       # self-signed TLS cert across restarts.
@@ -22,7 +22,7 @@ services:
       # AUTH_TOKEN: changeme    # require ?token=… on the ws connection
       # BLURT_AUTOCERT: "0"     # disable the auto cert, fall back to plain ws://
       HOST: 0.0.0.0
-      PORT: "7860"
+      PORT: "25878"
     # GPU access. Requires the NVIDIA Container Toolkit.
     gpus: all
     restart: unless-stopped

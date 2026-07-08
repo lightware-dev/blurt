@@ -143,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func setServer() {
         if let v = prompt("Server WebSocket URL", Settings.serverURL,
-                          "e.g. wss://192.168.1.50:7860/ws") {
+                          "e.g. wss://192.168.1.50:25878/ws") {
             Settings.serverURL = v.trimmingCharacters(in: .whitespaces)
         }
     }

@@ -36,7 +36,7 @@ from server.asr import ParakeetASR, SAMPLE_RATE
 
 # ---- config -------------------------------------------------------------
 HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", "7860"))
+PORT = int(os.getenv("PORT", "25878"))
 AUTH_TOKEN = os.getenv("AUTH_TOKEN", "")            # if set, ws requires ?token=
 SILENCE_MS = float(os.getenv("SILENCE_MS", "600"))  # pause that commits a segment
 PARTIAL_INTERVAL_MS = float(os.getenv("PARTIAL_INTERVAL_MS", "350"))

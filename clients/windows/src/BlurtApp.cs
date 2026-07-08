@@ -179,7 +179,7 @@ internal sealed class BlurtApp : IDisposable
 
     private void SetServer()
     {
-        var v = PromptWindow.Ask("Server WebSocket URL", Settings.ServerUrl, "e.g. wss://192.168.1.50:7860/ws");
+        var v = PromptWindow.Ask("Server WebSocket URL", Settings.ServerUrl, "e.g. wss://192.168.1.50:25878/ws");
         if (v is not null) Settings.ServerUrl = v;
     }
 

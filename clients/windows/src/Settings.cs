@@ -11,7 +11,7 @@ internal static class Settings
 {
     private sealed class Model
     {
-        public string ServerUrl { get; set; } = "wss://localhost:7860/ws";
+        public string ServerUrl { get; set; } = "wss://localhost:25878/ws";
         public string AuthToken { get; set; } = "";
         public string InjectMode { get; set; } = "paste"; // "paste" or "type"
         public bool DidOnboard { get; set; }

@@ -65,7 +65,7 @@ dotnet publish Blurt.csproj -c Release -r win-x64 --self-contained true `
 ```
 
 First run: the setup window opens. Enter your server URL (e.g.
-`wss://192.168.1.50:7860/ws`), run the mic test, hit **Start Blurting**, then press
+`wss://192.168.1.50:25878/ws`), run the mic test, hit **Start Blurting**, then press
 **Ctrl+Alt+Space** in any app and talk.
 
 > **No local Windows box?** You don't need one — the CI workflow builds and

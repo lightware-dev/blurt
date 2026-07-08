@@ -33,7 +33,7 @@ def load_pcm16(path: str) -> bytes:
 
 async def main():
     wav = sys.argv[1] if len(sys.argv) > 1 else "audio/clean.wav"
-    url = sys.argv[2] if len(sys.argv) > 2 else "wss://localhost:7860/ws"
+    url = sys.argv[2] if len(sys.argv) > 2 else "wss://localhost:25878/ws"
     pcm = load_pcm16(wav)
     frame_bytes = int(SR * FRAME_MS / 1000) * 2
 

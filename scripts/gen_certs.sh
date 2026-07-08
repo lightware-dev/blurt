@@ -30,4 +30,4 @@ chmod 600 "$CERTS/key.pem"
 printf '%s\n' "$HOST" > "$CERTS/.lanip"
 
 echo "Wrote certs/cert.pem, certs/key.pem (host=$HOST)"
-echo "Point the Mac client at: wss://$HOST:7860/ws"
+echo "Point the Mac client at: wss://$HOST:25878/ws"

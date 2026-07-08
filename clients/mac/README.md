@@ -91,7 +91,7 @@ the `.p8`).
    the prompt; open **System Settings ▸ Privacy & Security ▸ Accessibility** and
    enable **Blurt** (toggle off/on if you rebuild).
 3. Click the menu-bar **mic** icon ▸ **Set Server URL…** →
-   `wss://<your-linux-ip>:7860/ws` (and **Set Auth Token…** if the server has
+   `wss://<your-linux-ip>:25878/ws` (and **Set Auth Token…** if the server has
    `AUTH_TOKEN` set).
 
 ## Use

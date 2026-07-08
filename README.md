@@ -50,8 +50,10 @@ pip install -r requirements.txt          # torch must match your CUDA (5090 → 
 ./blurtd -m v2 --port 8000                # English-only 0.6B on another port
 ```
 
-Serves `wss://<ip>:7860/ws` when `certs/cert.pem` + `certs/key.pem` exist (they do),
-otherwise plain `ws://`. Open `https://<ip>:7860/` for a **browser mic test page**.
+Serves `wss://<ip>:25878/ws` when `certs/cert.pem` + `certs/key.pem` exist (they do),
+otherwise plain `ws://`. Open `https://<ip>:25878/` for a **browser mic test page**.
+The default port **`25878`** is a mnemonic — `2-5-8-7-8` spells **BLURT** on a phone
+keypad (B→2, L→5, U→8, R→7, T→8). Override it with `--port` or `PORT`.
 
 Config (env or `.env`, all optional): `PARAKEET_MODEL`, `PARAKEET_FP32`, `HOST`,
 `PORT`, `AUTH_TOKEN`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`. See
@@ -67,7 +69,7 @@ injects your host driver at run time (`--gpus all`).
 
 ```bash
 docker build -t blurtd .
-docker run --gpus all -p 7860:7860 -v blurt-cache:/root/.cache blurtd
+docker run --gpus all -p 25878:25878 -v blurt-cache:/root/.cache blurtd
 #   append flags like a bare invocation:  docker run … blurtd -m v2 --port 8000
 # or:
 docker compose up --build
@@ -142,7 +144,7 @@ open Blurt.app
 ```
 
 Set the server URL from the menu-bar icon (▸ *Set Server URL…* →
-`wss://<linux-ip>:7860/ws`), grant **Microphone** and **Accessibility** when
+`wss://<linux-ip>:25878/ws`), grant **Microphone** and **Accessibility** when
 prompted, then press **⌥Space** to dictate. See `clients/mac/README.md` for details
 (including notarized distribution).
 

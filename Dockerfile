@@ -5,7 +5,7 @@
 # run time. Requires `--gpus all` (driver must support CUDA 13; 5090 → 570+).
 #
 #   docker build -t blurtd .
-#   docker run --gpus all -p 7860:7860 -v blurt-cache:/root/.cache blurtd
+#   docker run --gpus all -p 25878:25878 -v blurt-cache:/root/.cache blurtd
 #
 # Models are pulled from HuggingFace on first run into /root/.cache — mount a
 # volume there (as above) so you don't re-download on every container start.
@@ -52,10 +52,10 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV HOST=0.0.0.0 \
-    PORT=7860 \
+    PORT=25878 \
     HF_HOME=/root/.cache/huggingface
 
-EXPOSE 7860
+EXPOSE 25878
 
 # The entrypoint mints a TLS cert if needed, then runs `python -m server`.
 # Append daemon flags as CMD, e.g.  docker run ... blurtd -m v2 --port 8000

@@ -35,7 +35,7 @@ internal sealed class Onboarding : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = Brand.Ink950Brush;
 
-        _serverField = InputField(Settings.ServerUrl, "wss://192.168.1.50:7860/ws");
+        _serverField = InputField(Settings.ServerUrl, "wss://192.168.1.50:25878/ws");
         _tokenField = InputField(Settings.AuthToken, "blank = none");
         _micPill = new StatusPill();
         _cursor = new TextBlock

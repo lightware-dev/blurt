@@ -24,7 +24,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"model alias (see --list-models) or full HF id [default: {DEFAULT_ALIAS}]")
     p.add_argument("--list-models", action="store_true", help="print available models and exit")
     p.add_argument("--host", default=os.getenv("HOST", "0.0.0.0"))
-    p.add_argument("--port", type=int, default=int(os.getenv("PORT", "7860")))
+    # Default 25878 spells "BLURT" on a phone keypad (B-L-U-R-T → 2-5-8-7-8).
+    p.add_argument("--port", type=int, default=int(os.getenv("PORT", "25878")))
     p.add_argument("--fp32", action="store_true", help="load in fp32 (default bf16, ~half VRAM)")
     p.add_argument("--no-preload", action="store_true", help="defer model load until first dictation")
     return p
