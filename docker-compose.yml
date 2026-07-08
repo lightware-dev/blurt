@@ -7,6 +7,7 @@ services:
   blurtd:
     build: .
     image: blurtd
+    container_name: blurtd
     ports:
       - "25878:25878"
     volumes:
@@ -23,6 +24,12 @@ services:
       # BLURT_AUTOCERT: "0"     # disable the auto cert, fall back to plain ws://
       HOST: 0.0.0.0
       PORT: "25878"
+    # The host resolves DNS via systemd-resolved's loopback stub (127.0.0.53),
+    # which isn't reachable from inside a container — so set a real resolver here
+    # or model downloads from huggingface.co fail with "name resolution" errors.
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
     # GPU access. Requires the NVIDIA Container Toolkit.
     gpus: all
     restart: unless-stopped
