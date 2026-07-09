@@ -46,7 +46,7 @@ final class HUD {
             self.label.textColor = Brand.boneDim
             self.position()
             self.window?.orderFrontRegardless()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if self.generation == token { self.window?.orderOut(nil) }
             }
         }

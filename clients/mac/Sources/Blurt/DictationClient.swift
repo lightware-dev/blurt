@@ -10,7 +10,7 @@ final class DictationClient: NSObject, URLSessionDelegate {
 
     var onPartial: ((String) -> Void)?
     var onFinal: ((String) -> Void)?
-    var onStatus: ((String) -> Void)?
+    var onStatus: ((String, String?) -> Void)?   // (state, detail)
     var onError: ((String) -> Void)?
 
     func connectAndStart() {
@@ -72,7 +72,7 @@ final class DictationClient: NSObject, URLSessionDelegate {
             switch type {
             case "partial": self.onPartial?(obj["text"] as? String ?? "")
             case "final":   self.onFinal?(obj["text"] as? String ?? "")
-            case "status":  self.onStatus?(obj["state"] as? String ?? "")
+            case "status":  self.onStatus?(obj["state"] as? String ?? "", obj["detail"] as? String)
             default: break
             }
         }

@@ -13,7 +13,7 @@ internal sealed class DictationClient
 {
     public Action<string>? OnPartial;
     public Action<string>? OnFinal;
-    public Action<string>? OnStatus;
+    public Action<string, string?>? OnStatus; // (state, detail)
     public Action<string>? OnError;
 
     private ClientWebSocket? _socket;
@@ -164,7 +164,9 @@ internal sealed class DictationClient
                 case "partial": OnPartial?.Invoke(text); break;
                 case "final": OnFinal?.Invoke(text); break;
                 case "status":
-                    OnStatus?.Invoke(root.TryGetProperty("state", out var s) ? s.GetString() ?? "" : "");
+                    OnStatus?.Invoke(
+                        root.TryGetProperty("state", out var s) ? s.GetString() ?? "" : "",
+                        root.TryGetProperty("detail", out var d) ? d.GetString() : null);
                     break;
             }
         }

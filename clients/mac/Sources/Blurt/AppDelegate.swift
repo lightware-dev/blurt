@@ -77,6 +77,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.client.close()
             if !text.isEmpty { TextInjector.inject(text) }
         }
+        client.onStatus = { [weak self] state, detail in
+            // The server reports a fatal decode failure (e.g. a wedged CUDA context)
+            // as {status: error}. Surface it instead of leaving the HUD stuck on
+            // "Listening…" with no text ever arriving.
+            guard state == "error" else { return }
+            self?.forceStop()
+            self?.hud.hide()
+            let first = detail?.split(separator: "\n").first.map(String.init)
+            self?.notify("Dictation server error", first ?? "The server could not transcribe. Try again, and restart the server if it persists.")
+        }
         client.onError = { [weak self] msg in
             self?.hud.hide()
             self?.forceStop()

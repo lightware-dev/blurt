@@ -65,7 +65,7 @@ internal sealed class Hud
         Position();
         _window!.Show();
 
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         timer.Tick += (_, _) =>
         {
             timer.Stop();

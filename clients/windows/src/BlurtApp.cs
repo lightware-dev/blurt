@@ -107,6 +107,20 @@ internal sealed class BlurtApp : IDisposable
             _client.Close();
             if (!string.IsNullOrEmpty(text)) TextInjector.Inject(text);
         });
+        _client.OnStatus = (state, detail) => _ui.Invoke(() =>
+        {
+            // The server reports a fatal decode failure (e.g. a wedged CUDA context)
+            // as {status: error}. Surface it instead of leaving the HUD stuck on
+            // "Listening…" with no text ever arriving.
+            if (state != "error") return;
+            ForceStop();
+            _hud.Hide();
+            var first = detail?.Split('\n', 2)[0];
+            Notify("Dictation server error",
+                string.IsNullOrEmpty(first)
+                    ? "The server could not transcribe. Try again, and restart the server if it persists."
+                    : first);
+        });
         _client.OnError = msg => _ui.Invoke(() =>
         {
             _hud.Hide();
