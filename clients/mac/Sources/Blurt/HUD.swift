@@ -109,9 +109,20 @@ final class HUD {
     }
 
     private func position() {
-        guard let w = window, let screen = NSScreen.main else { return }
+        guard let w = window, let screen = Self.activeScreen() else { return }
         let x = screen.frame.midX - size.width / 2
         let y = screen.frame.minY + 140
         w.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)
+    }
+
+    /// The screen the user is currently working on. `NSScreen.main` tracks the
+    /// key window, which for a background/click-through app resolves to the
+    /// primary display — not where the user is. The screen under the mouse
+    /// cursor is a far better proxy for "current screen".
+    private static func activeScreen() -> NSScreen? {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
     }
 }

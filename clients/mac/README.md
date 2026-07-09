@@ -101,6 +101,13 @@ the `.p8`).
 - Menu options: **Set Server URL**, **Set Auth Token**, **Insert via Typing (not
   Paste)**, **Quit**.
 
+**Multiple monitors.** The HUD appears on the screen under the **mouse cursor**,
+not always the primary display (`HUD.activeScreen()` — `NSScreen.main` tracks the
+key window, which for a background app is always the primary). Text insertion is
+independent of the screen: synthetic key events go to whatever field holds
+**keyboard focus**, wherever it is. These are usually the same screen but can
+differ if the mouse and the focused field are on different displays.
+
 ## Text insertion
 
 - **Paste (default):** copies the text, sends ⌘V, restores your previous clipboard.
