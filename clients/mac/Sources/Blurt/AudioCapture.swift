@@ -9,6 +9,10 @@ final class AudioCapture {
                                           sampleRate: 16000, channels: 1, interleaved: true)!
     /// Called on an audio thread with a chunk of Int16 PCM bytes.
     var onFrame: ((Data) -> Void)?
+    /// Called on an audio thread with per-band FFT magnitudes (0…1) of each
+    /// chunk, for the HUD's spectrum meter.
+    var onSpectrum: (([Float]) -> Void)?
+    private let spectrum = Spectrum(bandCount: 24)
 
     func start() throws {
         let input = engine.inputNode
@@ -45,5 +49,9 @@ final class AudioCapture {
         let count = Int(out.frameLength)
         let data = Data(bytes: ch[0], count: count * MemoryLayout<Int16>.size)
         onFrame?(data)
+
+        if let onSpectrum = onSpectrum {
+            onSpectrum(spectrum.ingest(ch[0], count: count))
+        }
     }
 }

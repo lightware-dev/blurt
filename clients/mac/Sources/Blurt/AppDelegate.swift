@@ -71,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func wire() {
         audio.onFrame = { [weak self] data in self?.client.sendAudio(data) }
+        audio.onSpectrum = { [weak self] bands in self?.hud.spectrum(bands) }
         client.onPartial = { [weak self] text in self?.hud.show(text) }
         client.onFinal = { [weak self] text in
             self?.hud.hide()

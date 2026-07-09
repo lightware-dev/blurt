@@ -8,6 +8,7 @@ final class HUD {
     private var window: NSWindow?
     private let label = NSTextField(labelWithString: "")
     private let dot = NSView()
+    private let wave = WaveformView()
 
     private let size = NSSize(width: 560, height: 76)
     // Bumped on every show/hide so a scheduled flash auto-hide only fires if no
@@ -22,14 +23,21 @@ final class HUD {
             self.label.stringValue = isPlaceholder ? "Listening…" : text
             self.label.font = isPlaceholder ? Brand.mono(17) : Brand.mono(18, .medium)
             self.label.textColor = isPlaceholder ? Brand.boneDim : Brand.bone
+            self.wave.isHidden = false
             self.position()
             self.window?.orderFrontRegardless()
         }
     }
 
+    /// Feed the latest FFT frequency-band magnitudes into the spectrum meter.
+    func spectrum(_ bands: [Float]) {
+        DispatchQueue.main.async { self.wave.setBands(bands) }
+    }
+
     func hide() {
         DispatchQueue.main.async {
             self.generation += 1
+            self.wave.reset()
             self.window?.orderOut(nil)
         }
     }
@@ -44,6 +52,9 @@ final class HUD {
             self.label.stringValue = text
             self.label.font = Brand.mono(17)
             self.label.textColor = Brand.boneDim
+            // Recording is over during a flash message — no meter.
+            self.wave.reset()
+            self.wave.isHidden = true
             self.position()
             self.window?.orderFrontRegardless()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -94,6 +105,13 @@ final class HUD {
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
 
+        // Live flowing-wave meter, pinned to the right in brand yellow. The label
+        // stops 14pt before it so the text never runs under the waveform.
+        wave.translatesAutoresizingMaskIntoConstraints = false
+        wave.setContentCompressionResistancePriority(.required, for: .horizontal)
+        wave.setContentHuggingPriority(.required, for: .horizontal)
+        container.addSubview(wave)
+
         NSLayoutConstraint.activate([
             dot.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22),
             dot.centerYAnchor.constraint(equalTo: container.centerYAnchor),
@@ -101,8 +119,13 @@ final class HUD {
             dot.heightAnchor.constraint(equalToConstant: 10),
 
             label.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 14),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -22),
+            label.trailingAnchor.constraint(equalTo: wave.leadingAnchor, constant: -14),
             label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+
+            wave.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -22),
+            wave.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            wave.widthAnchor.constraint(equalToConstant: 96),
+            wave.heightAnchor.constraint(equalToConstant: 34),
         ])
         w.contentView = container
         window = w
