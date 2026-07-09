@@ -61,10 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateIcon() {
         guard let button = statusItem.button else { return }
-        // Blurt's own highlighter-bar mark (from the favicon), tinted coral
-        // while recording so the menu bar shows "blurting" at a glance.
-        button.image = Brand.menuBarIcon()
-        button.contentTintColor = recording ? Brand.coral : nil
+        // Blurt's own highlighter-bar mark (from the favicon), drawn coral while
+        // recording so the menu bar shows "blurting" at a glance.
+        button.image = Brand.menuBarIcon(tint: recording ? Brand.coral : nil)
+        button.contentTintColor = nil
     }
 
     // MARK: wiring

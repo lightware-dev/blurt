@@ -42,14 +42,20 @@ enum Brand {
 
     // ── menu-bar glyph ───────────────────────────────────────
     /// The Blurt mark — the single upright "highlighter bar" from the favicon
-    /// (`www/public/favicon.svg`), sized for the status bar. Rendered as an
-    /// AppKit *template* image: pure black + alpha so macOS tints it to match
-    /// the menu bar (and the app can override the tint red while recording).
-    static func menuBarIcon() -> NSImage {
+    /// (`www/public/favicon.svg`), sized for the status bar.
+    ///
+    /// Idle (`tint == nil`): a *template* image (pure black + alpha) so macOS
+    /// tints it to match the menu bar in light/dark mode. Recording: pass an
+    /// explicit `tint` (coral) and it's drawn as a plain colored image. We draw
+    /// the colour in rather than relying on `NSStatusItem`'s `contentTintColor`,
+    /// which doesn't reliably tint a template status-bar glyph — it can wash the
+    /// mark out to invisible depending on appearance.
+    static func menuBarIcon(tint: NSColor? = nil) -> NSImage {
         let size = NSSize(width: 19, height: 19)
+        let color = tint ?? .black
         let image = NSImage(size: size, flipped: false) { rect in
-            NSColor.black.setFill()
-            NSColor.black.setStroke()
+            color.setFill()
+            color.setStroke()
 
             // Thin rounded-square border (as wide as tall), echoing the
             // favicon's dark rounded square. Inset by half the line width so
@@ -68,7 +74,7 @@ enum Brand {
             NSBezierPath(roundedRect: bar, xRadius: 1.2, yRadius: 1.2).fill()
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = (tint == nil)
         return image
     }
 }
