@@ -66,6 +66,7 @@ class ParakeetASR:
             if not self.fp32 and torch.cuda.is_bf16_supported():
                 model.to(torch.bfloat16)
         self.dtype = next(model.parameters()).dtype
+        _disable_cuda_graph_decoder(model)
         self._model = model
         self._torch = torch
         _quiet_nemo_transcribe_warning()
@@ -94,6 +95,37 @@ class ParakeetASR:
         """
         if self._torch is not None and self._torch.cuda.is_available():
             self._torch.cuda.empty_cache()
+
+
+def _disable_cuda_graph_decoder(model):
+    """Turn off NeMo's CUDA-graph TDT/RNNT greedy decoder.
+
+    The graph decoder captures a CUDA graph on the first decode and *replays* it
+    on every subsequent call, with pointers baked in to caching-allocator blocks.
+    But we call `torch.cuda.empty_cache()` (release_cache) between dictations,
+    which returns those blocks to the driver — so the next replay reads freed
+    memory and raises `CUDA error: an illegal memory access`, which poisons the
+    process's CUDA context and makes *every* later decode fail until restart.
+    Symptom: the first dictation works, the second (and all after) crash.
+
+    Disabling the graph decoder falls back to the eager label loop. For the short
+    segments this server decodes the speed difference is negligible, and it removes
+    the crash entirely (verified on RTX 5090 / sm_120). No-op for CTC models, which
+    have no `greedy.use_cuda_graph_decoder`.
+    """
+    try:
+        from omegaconf import open_dict
+
+        dcfg = getattr(model, "cfg", None)
+        dcfg = getattr(dcfg, "decoding", None)
+        if dcfg is None or "greedy" not in dcfg:
+            return
+        with open_dict(dcfg):
+            dcfg.greedy.use_cuda_graph_decoder = False
+        model.change_decoding_strategy(dcfg)
+        print("[asr] cuda-graph decoder disabled (avoids replay-after-empty_cache crash)", flush=True)
+    except Exception as e:  # never let a decoding-config quirk block startup
+        print(f"[asr] warn: could not disable cuda-graph decoder: {e}", flush=True)
 
 
 def _quiet_nemo_transcribe_warning():
