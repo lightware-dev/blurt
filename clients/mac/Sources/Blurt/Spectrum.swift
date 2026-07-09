@@ -34,6 +34,13 @@ final class Spectrum {
     private let noiseRiseDb: Float = 0.05       // ambient estimate creep-up, per frame
     private let noiseFallDb: Float = 1.2        // ambient estimate drop, per frame
     private let gateDb: Float = 12              // signal must clear ambient by this much
+    // The estimate starts at 0 dB ("assume loud") and can only descend at the
+    // bounded rate — from there to room level takes seconds, during which the
+    // gate freezes the meter on the first session after launch. So the first
+    // frame with real signal primes it directly; only then does the
+    // rate-limited tracking take over. Digital silence from a still-warming
+    // mic (exactly -140 dB) must not prime it.
+    private var primed = false
 
     init(fftSize: Int = 512, bandCount: Int = 22, sampleRate: Double = 16000) {
         self.fftSize = fftSize
@@ -102,14 +109,19 @@ final class Spectrum {
         vDSP_vsmul(mags, 1, &norm, &mags, 1, vDSP_Length(half))
 
         var out = [Float](repeating: 0, count: bandCount)
+        var didPrime = false
         for (b, range) in bandBins.enumerated() {
             var sum: Float = 0
             for i in range.lo..<range.hi { sum += mags[i] }
             let avg = sum / Float(max(range.hi - range.lo, 1))
             let db = 20 * log10(avg + 1e-7)
             // Track ambient: descend toward quieter frames, creep up otherwise.
-            noiseDb[b] = db < noiseDb[b] ? max(db, noiseDb[b] - noiseFallDb)
-                                         : noiseDb[b] + noiseRiseDb
+            if !primed {
+                if db > -120 { noiseDb[b] = db; didPrime = true }
+            } else {
+                noiseDb[b] = db < noiseDb[b] ? max(db, noiseDb[b] - noiseFallDb)
+                                             : noiseDb[b] + noiseRiseDb
+            }
             let gate = noiseDb[b] + gateDb
             // Relax this band's peak, then let the current level catch it.
             peakDb[b] = max(db, peakDb[b] - peakDecayDb)
@@ -119,6 +131,7 @@ final class Spectrum {
             // leaving real speech swings nearly untouched.
             out[b] = level * level * (3 - 2 * level)
         }
+        if didPrime { primed = true }
         return out
     }
 }

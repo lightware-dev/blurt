@@ -69,6 +69,10 @@ final class DictationClient: NSObject, URLSessionDelegate {
               let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
               let type = obj["type"] as? String else { return }
         DispatchQueue.main.async {
+            // A partial can already be queued on main when close() is called
+            // (e.g. Esc-cancel): delivering it would resurrect the HUD after
+            // the "Cancelled" flash and leave it stuck on screen.
+            guard !self.closing else { return }
             switch type {
             case "partial": self.onPartial?(obj["text"] as? String ?? "")
             case "final":   self.onFinal?(obj["text"] as? String ?? "")
