@@ -2,13 +2,16 @@ import AppKit
 
 /// A small borderless, click-through overlay near the bottom of the screen that
 /// shows live partial transcription while dictating. Styled to match the website's
-/// HUD (see `www` — the animated demo box): near-black ink pill, a glowing coral
-/// rec dot, and the live text in mono.
+/// HUD (see `www` — the animated demo box): near-black ink pill, the live flowing
+/// waveform in brand yellow on the left, and the live text in mono to its right.
 final class HUD {
     private var window: NSWindow?
     private let label = NSTextField(labelWithString: "")
-    private let dot = NSView()
     private let wave = WaveformView()
+    // The label normally starts right of the waveform; during a flash message
+    // the wave is hidden, so the label slides to the pill's leading edge.
+    private var labelAfterWave: NSLayoutConstraint?
+    private var labelAtLeading: NSLayoutConstraint?
 
     private let size = NSSize(width: 560, height: 76)
     // Bumped on every show/hide so a scheduled flash auto-hide only fires if no
@@ -24,6 +27,8 @@ final class HUD {
             self.label.font = isPlaceholder ? Brand.mono(17) : Brand.mono(18, .medium)
             self.label.textColor = isPlaceholder ? Brand.boneDim : Brand.bone
             self.wave.isHidden = false
+            self.labelAtLeading?.isActive = false
+            self.labelAfterWave?.isActive = true
             self.position()
             self.window?.orderFrontRegardless()
         }
@@ -52,9 +57,12 @@ final class HUD {
             self.label.stringValue = text
             self.label.font = Brand.mono(17)
             self.label.textColor = Brand.boneDim
-            // Recording is over during a flash message — no meter.
+            // Recording is over during a flash message — no meter; the label
+            // takes over the wave's spot so the text isn't oddly indented.
             self.wave.reset()
             self.wave.isHidden = true
+            self.labelAfterWave?.isActive = false
+            self.labelAtLeading?.isActive = true
             self.position()
             self.window?.orderFrontRegardless()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -81,16 +89,12 @@ final class HUD {
         container.layer?.borderColor = Brand.ink700.cgColor
         container.layer?.masksToBounds = true
 
-        // Glowing coral rec dot, like the demo's "Blurting…" indicator.
-        dot.wantsLayer = true
-        dot.layer?.backgroundColor = Brand.coral.cgColor
-        dot.layer?.cornerRadius = 5
-        dot.layer?.shadowColor = Brand.coral.cgColor
-        dot.layer?.shadowOpacity = 0.9
-        dot.layer?.shadowRadius = 6
-        dot.layer?.shadowOffset = .zero
-        dot.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(dot)
+        // The waveform doubles as the rec indicator: it ripples while listening
+        // and swells with the voice, so there's no separate rec dot.
+        wave.translatesAutoresizingMaskIntoConstraints = false
+        wave.setContentCompressionResistancePriority(.required, for: .horizontal)
+        wave.setContentHuggingPriority(.required, for: .horizontal)
+        container.addSubview(wave)
 
         label.font = Brand.mono(18, .medium)
         label.textColor = Brand.bone
@@ -105,27 +109,17 @@ final class HUD {
         label.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
 
-        // Live flowing-wave meter, pinned to the right in brand yellow. The label
-        // stops 14pt before it so the text never runs under the waveform.
-        wave.translatesAutoresizingMaskIntoConstraints = false
-        wave.setContentCompressionResistancePriority(.required, for: .horizontal)
-        wave.setContentHuggingPriority(.required, for: .horizontal)
-        container.addSubview(wave)
-
+        labelAfterWave = label.leadingAnchor.constraint(equalTo: wave.trailingAnchor, constant: 12)
+        labelAtLeading = label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22)
         NSLayoutConstraint.activate([
-            dot.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22),
-            dot.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            dot.widthAnchor.constraint(equalToConstant: 10),
-            dot.heightAnchor.constraint(equalToConstant: 10),
-
-            label.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 14),
-            label.trailingAnchor.constraint(equalTo: wave.leadingAnchor, constant: -14),
-            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-
-            wave.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -22),
+            wave.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 18),
             wave.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             wave.widthAnchor.constraint(equalToConstant: 96),
             wave.heightAnchor.constraint(equalToConstant: 34),
+
+            labelAfterWave!,
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -22),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
         w.contentView = container
         window = w
