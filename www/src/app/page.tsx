@@ -279,7 +279,7 @@ export default function Home() {
                         <span className="size-3 rounded-full bg-coral/80" />
                         <span className="size-3 rounded-full bg-marker/70" />
                         <span className="size-3 rounded-full bg-bone/25" />
-                        <span className="ml-2 text-xs text-bone-dim">localhost — bash</span>
+                        <span className="ml-2 text-xs text-bone-dim">gpu-box — bash</span>
                     </div>
                     <pre className="overflow-x-auto px-5 py-5 leading-relaxed text-bone/85">
                         <span className="text-bone-dim">$ </span>
