@@ -122,7 +122,7 @@ internal sealed class Hud
 
         var card = new Border
         {
-            Background = Brand.Solid(Brand.Ink900, 0.95),
+            Background = Brand.Solid(Brand.Ink900, 0.85),
             CornerRadius = new CornerRadius(18),
             BorderBrush = Brand.Ink700Brush,
             BorderThickness = new Thickness(1),

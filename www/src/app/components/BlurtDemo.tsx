@@ -28,6 +28,25 @@ const PAIRS: { raw: string; clean: string }[] = [
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+// The live waveform in brand yellow — the HUD's rec indicator. It ripples while
+// listening (no separate rec dot), so it doubles as the "we're recording" cue.
+// Staggered negative delays desync the bars into an organic flowing wave.
+const WAVE_DELAYS = ['-0.6s', '-0.15s', '-0.45s', '-0.05s', '-0.5s', '-0.25s', '-0.35s']
+
+function Waveform() {
+    return (
+        <span className="flex h-4 items-center gap-[3px]" aria-hidden>
+            {WAVE_DELAYS.map((delay, i) => (
+                <span
+                    key={i}
+                    className="h-full w-[3px] animate-wave rounded-full bg-marker"
+                    style={{ animationDelay: delay }}
+                />
+            ))}
+        </span>
+    )
+}
+
 export default function BlurtDemo() {
     const [i, setI] = useState(0)
     const [typed, setTyped] = useState('')
@@ -68,13 +87,14 @@ export default function BlurtDemo() {
     }, [i])
 
     return (
-        <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-ink-700 bg-ink-900 shadow-2xl shadow-black/40">
+        <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-[18px] border border-ink-700 bg-ink-900/85 shadow-2xl shadow-black/40 backdrop-blur-sm">
             {/* HUD title bar */}
-            <div className="flex items-center gap-3 border-b border-ink-700 bg-ink-850 px-4 py-3">
-                <span
-                    className="inline-block size-2.5 rounded-full bg-coral"
-                    style={{ boxShadow: '0 0 10px var(--color-coral)' }}
-                />
+            <div className="flex items-center gap-3 border-b border-ink-700 bg-ink-850/70 px-4 py-3">
+                {phase === 'clean' ? (
+                    <span className="animate-blink font-mono text-sm leading-none text-marker">▍</span>
+                ) : (
+                    <Waveform />
+                )}
                 <span className="font-mono text-xs tracking-wide text-bone-dim">
                     {phase === 'clean' ? 'typed into your editor' : 'Blurting…'}
                 </span>

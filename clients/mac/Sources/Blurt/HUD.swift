@@ -83,7 +83,7 @@ final class HUD {
 
         let container = NSView()
         container.wantsLayer = true
-        container.layer?.backgroundColor = Brand.ink900.withAlphaComponent(0.95).cgColor
+        container.layer?.backgroundColor = Brand.ink900.withAlphaComponent(0.85).cgColor
         container.layer?.cornerRadius = 18
         container.layer?.borderWidth = 1
         container.layer?.borderColor = Brand.ink700.cgColor

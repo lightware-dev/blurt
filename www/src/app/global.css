@@ -20,6 +20,7 @@
     --font-mono: var(--font-jetbrains);
 
     --animate-blink: blink 1.05s steps(1) infinite;
+    --animate-wave: wave 0.9s ease-in-out infinite;
 
     @keyframes blink {
         0%,
@@ -29,6 +30,17 @@
         50.01%,
         100% {
             opacity: 0;
+        }
+    }
+
+    /* live waveform bars in the HUD — ripple up and down while listening */
+    @keyframes wave {
+        0%,
+        100% {
+            transform: scaleY(0.3);
+        }
+        50% {
+            transform: scaleY(1);
         }
     }
 
