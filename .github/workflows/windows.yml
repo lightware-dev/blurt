@@ -36,10 +36,10 @@ jobs:
                 working-directory: clients/windows
         steps:
             - name: checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
 
             - name: setup .NET 8
-              uses: actions/setup-dotnet@v4
+              uses: actions/setup-dotnet@v5
               with:
                   dotnet-version: '8.0.x'
 
@@ -121,7 +121,7 @@ jobs:
                   "name=Blurt-$ver-Windows-$sha" >> $env:GITHUB_OUTPUT
 
             - name: upload artifact
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v5
               with:
                   name: ${{ steps.artifact.outputs.name }}
                   path: ${{ steps.artifact.outputs.zip }}

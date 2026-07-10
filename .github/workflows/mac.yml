@@ -32,7 +32,7 @@ jobs:
             contents: write # needed to publish a GitHub Release on tag pushes
         steps:
             - name: checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
 
             - name: select latest stable Xcode
               uses: maxim-lobanov/setup-xcode@v1
@@ -146,7 +146,7 @@ jobs:
               run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
 
             - name: upload artifact
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v5
               with:
                   name: ${{ steps.artifact.outputs.name }}
                   path: ${{ steps.artifact.outputs.zip }}
