@@ -146,7 +146,7 @@ jobs:
               run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
 
             - name: upload artifact
-              uses: actions/upload-artifact@v5
+              uses: actions/upload-artifact@v7
               with:
                   name: ${{ steps.artifact.outputs.name }}
                   path: ${{ steps.artifact.outputs.zip }}
