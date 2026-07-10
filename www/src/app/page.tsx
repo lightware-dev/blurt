@@ -298,6 +298,10 @@ export default function Home() {
                         {'\n'}
                         {' '}Main PID: 1337 (parakeet-tdt-0.6b-v3)
                         {'\n'}
+                        {'   '}Listen:{' '}
+                        <span className="text-bone">wss://0.0.0.0:25878/ws</span> — port
+                        spells BLURT on a phone keypad
+                        {'\n'}
                         {'    '}Tasks: 1 (listening)
                         {'\n'}
                         {'   '}Memory: 2.3G
@@ -310,6 +314,13 @@ export default function Home() {
                     </pre>
                 </div>
                 <p className="mt-3 font-mono text-xs text-bone-dim">
+                    // port <span className="text-bone">25878</span> is not random —
+                    2-5-8-7-8 spells <span className="text-bone">BLURT</span> on a phone
+                    keypad (B→2, L→5, U→8, R→7, T→8). override with{' '}
+                    <span className="text-bone">--port</span> or{' '}
+                    <span className="text-bone">PORT</span>.
+                </p>
+                <p className="mt-2 font-mono text-xs text-bone-dim">
                     // no, there is no `blurtd stop`. you press ⌥Space again. that’s the stop.
                 </p>
             </section>
