@@ -39,6 +39,10 @@ internal sealed class BlurtApp : IDisposable
 
     public void Start()
     {
+        // Sweep away the previous version's exe left behind by a prior self-update.
+        // Off the UI thread since it may briefly retry while the old process exits.
+        Task.Run(Updater.CleanupOldExe);
+
         SetupTray();
         Wire();
         SetupHotKey();
@@ -46,6 +50,11 @@ internal sealed class BlurtApp : IDisposable
         // First-run setup until the user has seen it once. Unlike macOS there's no
         // Accessibility gate to clear — text injection works without any grant.
         if (!Settings.DidOnboard) ShowOnboarding();
+
+        // Quietly check GitHub for a newer release on launch; only prompts if one
+        // exists. Skipped under the debugger so dev runs aren't nagged to "update".
+        if (!System.Diagnostics.Debugger.IsAttached)
+            _ = CheckForUpdatesAsync(silent: true);
     }
 
     // MARK: tray
@@ -67,6 +76,8 @@ internal sealed class BlurtApp : IDisposable
         { Checked = Settings.StartAtLogin, CheckOnClick = false };
         menu.Items.Add(_startupItem);
 
+        menu.Items.Add(new ToolStripSeparator());
+        Add(menu, "Check for Updates…", (_, _) => _ = CheckForUpdatesAsync(silent: false));
         menu.Items.Add(new ToolStripSeparator());
         Add(menu, "Quit Blurt", (_, _) => Quit());
 
@@ -254,7 +265,88 @@ internal sealed class BlurtApp : IDisposable
         _app.Shutdown();
     }
 
+    // MARK: updates
+
+    /// Check GitHub for a newer release; if one exists, prompt, download, then prompt
+    /// to restart into it. `silent` startup checks stay quiet unless there's an update
+    /// (and swallow network errors); a manual check always gives feedback. All the
+    /// dialogs are marshalled onto the UI thread since the awaits resume on a pool thread.
+    private async Task CheckForUpdatesAsync(bool silent)
+    {
+        Updater.Release? release;
+        try
+        {
+            release = await Updater.CheckAsync();
+        }
+        catch (Exception ex)
+        {
+            if (!silent) _ui.Invoke(() => Info($"Couldn't check for updates:\n{ex.Message}"));
+            return;
+        }
+
+        if (release is null)
+        {
+            if (!silent) _ui.Invoke(() => Info($"You're up to date (v{Updater.CurrentVersion})."));
+            return;
+        }
+
+        var accept = _ui.Invoke(() => Ask("Update available",
+            $"Blurt {release.Tag} is available — you have v{Updater.CurrentVersion}.\n\nDownload and install it now?"));
+        if (!accept) return;
+
+        _ui.Invoke(() => Notify("Blurt", "Downloading update…"));
+
+        string newExe;
+        try
+        {
+            newExe = await Updater.DownloadAsync(release);
+        }
+        catch (Exception ex)
+        {
+            _ui.Invoke(() => Info($"The update download failed:\n{ex.Message}"));
+            return;
+        }
+
+        var restart = _ui.Invoke(() => Ask("Update ready",
+            "The update is downloaded. Restart Blurt now to finish installing it?"));
+        if (!restart) return;
+
+        _ui.Invoke(() => ApplyUpdateAndRestart(newExe));
+    }
+
+    /// Swap in the new exe and relaunch. Frees the hotkey + tray first so the fresh
+    /// instance can claim them, then exits this one.
+    private void ApplyUpdateAndRestart(string newExe)
+    {
+        string exePath;
+        try
+        {
+            exePath = Updater.ApplyUpdate(newExe);
+        }
+        catch (Exception ex)
+        {
+            Info($"Couldn't install the update:\n{ex.Message}\n\n" +
+                 $"You can download it manually from:\n{Updater.ReleasesUrl}");
+            return;
+        }
+
+        Dispose(); // release the global hotkey and tray icon before the new exe starts
+        try { Updater.Launch(exePath); } catch { /* the user can relaunch Blurt manually */ }
+        _app.Shutdown();
+    }
+
     // MARK: helpers
+
+    /// A blocking Yes/No prompt; returns true on Yes.
+    private static bool Ask(string title, string body) =>
+        MessageBox.Show(body, title,
+            System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question)
+            == System.Windows.MessageBoxResult.Yes;
+
+    /// A simple informational dialog.
+    private static void Info(string body) =>
+        MessageBox.Show(body, "Blurt",
+            System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
 
     private void Notify(string title, string body)
     {

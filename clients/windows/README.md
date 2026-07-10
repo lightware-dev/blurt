@@ -22,6 +22,9 @@ same server protocol, same behaviour.
   Windows needs **no Accessibility permission** for this.
 - **First-run setup** — point Blurt at your server URL + optional auth token, run a
   quick mic test, and optionally start at sign-in.
+- **Auto-update** — on launch (and via **Check for Updates…** in the tray menu) Blurt
+  asks GitHub for the latest release; if it's newer it offers to download and restart
+  into it. See [Updates](#updates). (The macOS client updates through Homebrew instead.)
 
 Settings persist to `%APPDATA%\Blurt\config.json`.
 
@@ -45,6 +48,7 @@ Mirrors the Mac client file-for-file:
 | `Brand.cs` | Shared palette + fonts | `Brand.swift` |
 | `IconFactory.cs` | Tray icon drawn at runtime (no `.ico` asset) | — |
 | `StartupRegistration.cs` | HKCU Run-key "start at login" | — |
+| `Updater.cs` | GitHub-release check + self-replace update | — (Mac uses Homebrew) |
 
 The server WebSocket protocol is identical to the Mac client's, including trusting
 the server's self-signed LAN certificate.
@@ -75,6 +79,28 @@ First run: the setup window opens. Enter your server URL (e.g.
 > **No local Windows box?** You don't need one — the CI workflow builds and
 > publishes `Blurt.exe` for you (see below). Download the artifact/zip and run it
 > on any Windows 10/11 machine.
+
+## Updates
+
+Blurt updates itself from GitHub Releases — no installer, no separate updater
+process, no extra dependency (`Updater.cs`).
+
+- **Check.** On launch (and on demand via **Check for Updates…** in the tray menu)
+  it calls the GitHub API for the [latest release](https://github.com/lightware-dev/blurt/releases/latest),
+  parses its `v*` tag, and compares it to the running build's `<Version>`. The launch
+  check is silent unless there's something newer (and is skipped under a debugger).
+- **Download.** If you accept the prompt, it downloads the release's
+  `Blurt-Windows.zip` to a temp folder and extracts `Blurt.exe`.
+- **Apply + restart.** You can't overwrite a *running* exe, but Windows lets you
+  *rename* it. So Blurt renames the live `Blurt.exe` → `Blurt.old.exe`, copies the new
+  build into place, launches it, and quits. The fresh instance deletes the leftover
+  `Blurt.old.exe` on its next startup.
+
+Because the app is a portable single-file exe you run from wherever you unzipped it,
+this needs no elevation. If it's installed somewhere write-protected (e.g. under
+`Program Files`) the swap is denied gracefully and Blurt points you at the Releases
+page to update by hand. The self-replace relies on the release keeping a stable
+`Blurt-Windows.zip` asset — which `windows.yml` always attaches.
 
 ## CI & releases
 
