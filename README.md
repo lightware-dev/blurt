@@ -56,8 +56,10 @@ The default port **`25878`** is a mnemonic — `2-5-8-7-8` spells **BLURT** on a
 keypad (B→2, L→5, U→8, R→7, T→8). Override it with `--port` or `PORT`.
 
 Config (env or `.env`, all optional): `PARAKEET_MODEL`, `PARAKEET_FP32`, `HOST`,
-`PORT`, `AUTH_TOKEN`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`. See
-`.env.example`.
+`PORT`, `AUTH_TOKEN`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
+`LOG_STATS`. See `.env.example`. `LOG_STATS` (default on) logs per-dictation
+metadata — packet count, bytes, audio duration, segments — never transcript text;
+set `LOG_STATS=0` to silence it.
 
 ### Docker
 

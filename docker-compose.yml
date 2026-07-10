@@ -22,6 +22,7 @@ services:
       # PARAKEET_MODEL: v3      # v3 (default) | v2 | 1.1b | ctc-110m
       # AUTH_TOKEN: changeme    # require ?token=… on the ws connection
       # BLURT_AUTOCERT: "0"     # disable the auto cert, fall back to plain ws://
+      # LOG_STATS: "0"          # silence per-dictation stats (packets/bytes/duration)
       HOST: 0.0.0.0
       PORT: "25878"
     # The host resolves DNS via systemd-resolved's loopback stub (127.0.0.53),

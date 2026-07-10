@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import json
+import time
 import asyncio
 from pathlib import Path
 
@@ -38,6 +39,8 @@ from server.asr import ParakeetASR, SAMPLE_RATE
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "25878"))
 AUTH_TOKEN = os.getenv("AUTH_TOKEN", "")            # if set, ws requires ?token=
+# Per-dictation metadata logging (packets/bytes/duration — never transcript text).
+LOG_STATS = os.getenv("LOG_STATS", "1").strip().lower() not in ("", "0", "false", "no", "off")
 SILENCE_MS = float(os.getenv("SILENCE_MS", "600"))  # pause that commits a segment
 PARTIAL_INTERVAL_MS = float(os.getenv("PARTIAL_INTERVAL_MS", "350"))
 MAX_SEGMENT_S = float(os.getenv("MAX_SEGMENT_S", "20"))
@@ -58,6 +61,20 @@ def _f32(pcm16: bytes) -> np.ndarray:
     return np.frombuffer(pcm16, dtype=np.int16).astype(np.float32) / 32768.0
 
 
+def _log(msg: str):
+    # Metadata only — packet/byte/duration counters, never transcript text.
+    if LOG_STATS:
+        print(f"[blurtd] {msg}", flush=True)
+
+
+def _human_bytes(n: int) -> str:
+    for unit in ("B", "KB", "MB"):
+        if n < 1024 or unit == "MB":
+            return f"{int(n)} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} MB"
+
+
 async def send_json(ws: WebSocket, payload: dict):
     try:
         await ws.send_text(json.dumps(payload))
@@ -73,6 +90,10 @@ class Session:
         self.committed: list[str] = []
         self.running = False
         self.worker: asyncio.Task | None = None
+        # per-dictation metadata counters (metadata only — no transcript text)
+        self.packets = 0
+        self.bytes_in = 0
+        self.t_start = 0.0
 
     async def start(self):
         if self.running:
@@ -80,15 +101,21 @@ class Session:
         from server.vad import SileroVAD
         self.vad = SileroVAD()
         self.committed = []
+        self.packets = 0
+        self.bytes_in = 0
+        self.t_start = time.monotonic()
         self.running = True
         # drain any stale frames
         while not self.queue.empty():
             self.queue.get_nowait()
         self.worker = asyncio.create_task(self._run())
+        _log("dictation started")
         await send_json(self.ws, {"type": "status", "state": "ready"})
 
     def add_audio(self, pcm16: bytes):
         if self.running:
+            self.packets += 1
+            self.bytes_in += len(pcm16)
             self.queue.put_nowait(pcm16)
 
     async def stop(self):
@@ -166,6 +193,13 @@ class Session:
                         await commit(final_segment=True)
                         final_text = self._running_text()
                     await send_json(self.ws, {"type": "final", "text": final_text})
+                    audio_s = (len(full) // 2) / SAMPLE_RATE
+                    wall_s = time.monotonic() - self.t_start
+                    _log(
+                        f"dictation done: {self.packets} packets, "
+                        f"{_human_bytes(self.bytes_in)}, {audio_s:.1f}s audio, "
+                        f"{len(self.committed)} segments, {wall_s:.1f}s wall"
+                    )
                     return
 
                 # commit at a natural pause or when the segment gets too long
