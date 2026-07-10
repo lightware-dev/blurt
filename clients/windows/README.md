@@ -13,7 +13,9 @@ same server protocol, same behaviour.
   reserves plain Alt+Space for the window system menu, so Blurt can't reuse the
   Mac's ⌥Space.)
 - **Live HUD** — a borderless, click-through overlay near the bottom of the screen
-  shows partial text as you speak.
+  shows partial text as you speak, with a live audio **waveform** (a voice-shaped
+  FFT meter, brand yellow) that ripples while listening and swells with your voice.
+  On multi-monitor setups it appears on the screen under the **mouse cursor**.
 - **Text injection** — on stop, the final transcript is inserted into whatever field
   has focus, either by **paste** (clipboard + Ctrl+V, fast) or **type** (per-character
   Unicode keystrokes, works in terminals). Toggle in the tray menu. Unlike macOS,
@@ -32,10 +34,12 @@ Mirrors the Mac client file-for-file:
 | `Program.cs` | STA entry point, WPF app host | `main.swift` |
 | `BlurtApp.cs` | Tray + menu, wiring, dictation state machine | `AppDelegate.swift` |
 | `HotKey.cs` | `RegisterHotKey` on a hidden message window | `HotKey.swift` |
-| `AudioCapture.cs` | NAudio mic → 16 kHz mono PCM16 frames | `AudioCapture.swift` |
+| `AudioCapture.cs` | NAudio mic → 16 kHz mono PCM16 frames + FFT bands | `AudioCapture.swift` |
+| `Spectrum.cs` | PCM16 → log-spaced FFT band magnitudes | `Spectrum.swift` |
 | `DictationClient.cs` | `ClientWebSocket` → `{start}`/PCM/`{stop}` | `DictationClient.swift` |
 | `TextInjector.cs` | `SendInput` paste / Unicode type | `TextInjector.swift` |
 | `Hud.cs` | Click-through topmost overlay | `HUD.swift` |
+| `Waveform.cs` | Animated layered-ribbon audio meter | `Waveform.swift` |
 | `Onboarding.cs` | First-run setup window | `Onboarding.swift` |
 | `Settings.cs` | JSON-backed config | `Settings.swift` |
 | `Brand.cs` | Shared palette + fonts | `Brand.swift` |

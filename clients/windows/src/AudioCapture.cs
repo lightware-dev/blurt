@@ -11,10 +11,15 @@ namespace Blurt;
 internal sealed class AudioCapture : IDisposable
 {
     private WaveInEvent? _waveIn;
+    private readonly Spectrum _spectrum = new(bandCount: 24);
 
     /// Called on an audio thread with a chunk of Int16 PCM bytes. The byte array
     /// is only valid for the duration of the call — copy if you retain it.
     public Action<byte[], int>? OnFrame;
+
+    /// Called on an audio thread with per-band FFT magnitudes (0…1) of each chunk,
+    /// for the HUD's spectrum meter.
+    public Action<float[]>? OnSpectrum;
 
     public void Start()
     {
@@ -27,7 +32,10 @@ internal sealed class AudioCapture : IDisposable
         waveIn.DataAvailable += (_, e) =>
         {
             // e.Buffer may be larger than the valid region; only send BytesRecorded.
-            if (e.BytesRecorded > 0) OnFrame?.Invoke(e.Buffer, e.BytesRecorded);
+            if (e.BytesRecorded <= 0) return;
+            OnFrame?.Invoke(e.Buffer, e.BytesRecorded);
+            var onSpectrum = OnSpectrum;
+            if (onSpectrum is not null) onSpectrum(_spectrum.Ingest(e.Buffer, e.BytesRecorded));
         };
         waveIn.StartRecording();
         _waveIn = waveIn;

@@ -3,17 +3,16 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Effects;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 
 namespace Blurt;
 
 /// A small borderless, click-through overlay near the bottom of the screen that
 /// shows live partial transcription while dictating — the twin of the Mac
-/// client's HUD.swift. Near-black ink pill, a glowing coral rec dot, live text in
-/// mono. Topmost, never activates, and passes clicks through so it never steals
-/// focus from the field being typed into.
+/// client's HUD.swift. Near-black ink pill, the live flowing waveform in brand
+/// yellow on the left, live text in mono to its right. Topmost, never activates,
+/// and passes clicks through so it never steals focus from the field being typed
+/// into.
 internal sealed class Hud
 {
     private const double W = 560;
@@ -24,6 +23,7 @@ internal sealed class Hud
 
     private Window? _window;
     private TextBlock? _label;
+    private WaveformView? _wave;
     // Bumped on every show/hide so a scheduled flash auto-hide only fires if no
     // newer session has taken over the HUD in the meantime.
     private int _generation;
@@ -38,14 +38,22 @@ internal sealed class Hud
         label.FontSize = placeholder ? 17 : 18;
         label.FontWeight = placeholder ? FontWeights.Normal : FontWeights.Medium;
         label.Foreground = placeholder ? Brand.BoneDimBrush : Brand.BoneBrush;
+        // The waveform doubles as the rec indicator: it ripples while listening
+        // and swells with the voice, so there's no separate rec dot.
+        _wave!.Visibility = Visibility.Visible;
 
         Position();
         _window!.Show();
     }
 
+    /// Feed the latest FFT frequency-band magnitudes into the spectrum meter.
+    /// Must be called on the UI thread.
+    public void Spectrum(float[] bands) => _wave?.SetBands(bands);
+
     public void Hide()
     {
         _generation++;
+        _wave?.Reset();
         _window?.Hide();
     }
 
@@ -61,6 +69,11 @@ internal sealed class Hud
         label.FontSize = 17;
         label.FontWeight = FontWeights.Normal;
         label.Foreground = Brand.BoneDimBrush;
+        // Recording is over during a flash message — no meter; collapsing the wave
+        // lets the label fill from the pill's leading edge so the text isn't oddly
+        // indented (the Mac slides its label to the leading anchor for the same reason).
+        _wave!.Reset();
+        _wave.Visibility = Visibility.Collapsed;
 
         Position();
         _window!.Show();
@@ -92,25 +105,19 @@ internal sealed class Hud
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        var dot = new Ellipse
+        var wave = new WaveformView
         {
-            Width = 10,
-            Height = 10,
-            Fill = Brand.CoralBrush,
+            Width = 96,
+            Height = 34,
             VerticalAlignment = VerticalAlignment.Center,
-            Effect = new DropShadowEffect
-            {
-                Color = Brand.Coral,
-                BlurRadius = 12,
-                ShadowDepth = 0,
-                Opacity = 0.9,
-            },
+            Margin = new Thickness(0, 0, 12, 0),
         };
 
-        var row = new DockPanel { LastChildFill = true, Margin = new Thickness(22, 0, 22, 0) };
-        DockPanel.SetDock(dot, Dock.Left);
-        dot.Margin = new Thickness(0, 0, 14, 0);
-        row.Children.Add(dot);
+        // Wave docked left; the label fills the rest. When a flash message
+        // collapses the wave, the label reclaims its space and starts at the edge.
+        var row = new DockPanel { LastChildFill = true, Margin = new Thickness(18, 0, 22, 0) };
+        DockPanel.SetDock(wave, Dock.Left);
+        row.Children.Add(wave);
         row.Children.Add(label);
 
         var card = new Border
@@ -139,13 +146,38 @@ internal sealed class Hud
 
         _window = window;
         _label = label;
+        _wave = wave;
     }
 
+    /// Place the HUD near the bottom of the screen under the mouse cursor — the
+    /// Windows twin of HUD.activeScreen() on the Mac (WPF's own screen helpers
+    /// track the primary display, not where the user is working). WinForms reports
+    /// screen geometry in physical pixels; convert to WPF's device-independent
+    /// units through the primary monitor's scale factor. That's exact when the
+    /// monitors share a DPI — the common side-by-side case — and on mixed-DPI
+    /// setups it can be slightly off but never lands on the wrong screen.
     private void Position()
     {
-        var area = SystemParameters.WorkArea; // excludes the taskbar
-        _window!.Left = area.Left + (area.Width - W) / 2;
-        _window.Top = area.Bottom - H - 120; // ~120 px above the taskbar
+        try
+        {
+            var mouse = System.Windows.Forms.Control.MousePosition;
+            var wa = System.Windows.Forms.Screen.FromPoint(mouse).WorkingArea; // excludes the taskbar
+            double scale = System.Windows.Forms.Screen.PrimaryScreen is { } ps
+                           && SystemParameters.PrimaryScreenWidth > 0
+                ? ps.Bounds.Width / SystemParameters.PrimaryScreenWidth
+                : 1.0;
+            double left = wa.Left / scale, top = wa.Top / scale;
+            double width = wa.Width / scale, height = wa.Height / scale;
+            _window!.Left = left + (width - W) / 2;
+            _window.Top = top + height - H - 120; // ~120 px above the taskbar
+        }
+        catch
+        {
+            // Fall back to the primary work area if the screen query fails.
+            var area = SystemParameters.WorkArea;
+            _window!.Left = area.Left + (area.Width - W) / 2;
+            _window.Top = area.Bottom - H - 120;
+        }
     }
 
     // ── click-through / no-activate via extended window styles ──

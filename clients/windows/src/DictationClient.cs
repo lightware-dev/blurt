@@ -20,6 +20,13 @@ internal sealed class DictationClient
     private CancellationTokenSource? _cts;
     private volatile bool _closing;
 
+    /// True once Close()/Cancel has begun tearing the session down. A partial can
+    /// already be queued on the UI thread when that happens (e.g. Esc-cancel):
+    /// delivering it would resurrect the HUD after the "Cancelled" flash and leave
+    /// it stuck on screen, so callers skip late partials while this is set (mirrors
+    /// the Swift `guard !self.closing` in DictationClient.swift).
+    public bool Closing => _closing;
+
     // ClientWebSocket forbids concurrent sends; audio frames (every ~100 ms) and
     // the start/stop control messages all funnel through this gate.
     private readonly SemaphoreSlim _sendGate = new(1, 1);

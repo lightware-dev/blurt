@@ -99,8 +99,17 @@ internal sealed class BlurtApp : IDisposable
     private void Wire()
     {
         _audio.OnFrame = (data, count) => _client.SendAudio(data, count);
+        // Non-blocking (InvokeAsync): the spectrum fires on the audio thread ~10×/s
+        // and mustn't stall mic capture waiting on the UI. Mirrors DispatchQueue.main.async.
+        _audio.OnSpectrum = bands => _ui.InvokeAsync(() => _hud.Spectrum(bands));
 
-        _client.OnPartial = text => _ui.Invoke(() => _hud.Show(text));
+        // Skip a partial that arrives after teardown has begun — it would resurrect
+        // the HUD after a "Cancelled" flash (matches the Swift `closing` guard).
+        _client.OnPartial = text => _ui.Invoke(() =>
+        {
+            if (_client.Closing) return;
+            _hud.Show(text);
+        });
         _client.OnFinal = text => _ui.Invoke(() =>
         {
             _hud.Hide();
