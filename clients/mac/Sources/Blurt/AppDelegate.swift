@@ -8,8 +8,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKey: HotKey?
     private var doubleTap: ModifierDoubleTap?
     private var toggleItem: NSMenuItem?
+    private var copyLastItem: NSMenuItem?
     // Registered only while recording so it never swallows Esc globally otherwise.
     private var cancelKey: HotKey?
+
+    // The most recent finalized dictation, kept in memory only so it can be
+    // recovered from the menu when it landed somewhere unexpected. Never persisted.
+    private var lastDictation: String?
 
     private let audio = AudioCapture()
     private let client = DictationClient()
@@ -38,7 +43,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateIcon()
 
         let menu = NSMenu()
+        // Manage the "Copy Last Dictation" enabled state ourselves; otherwise the
+        // default auto-enabling would keep it clickable before anything's captured.
+        menu.autoenablesItems = false
         toggleItem = add(menu, "Start / Stop Blurting", #selector(toggle))
+        copyLastItem = add(menu, "Copy Last Dictation", #selector(copyLastDictation))
+        copyLastItem?.isEnabled = false
         menu.addItem(.separator())
         add(menu, "Settings…", #selector(showSettings))
         add(menu, "Setup & Permissions…", #selector(showOnboarding))
@@ -74,7 +84,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         client.onFinal = { [weak self] text in
             self?.hud.hide()
             self?.client.close()
-            if !text.isEmpty { TextInjector.inject(text) }
+            if !text.isEmpty {
+                self?.lastDictation = text
+                self?.copyLastItem?.isEnabled = true
+                TextInjector.inject(text)
+            }
         }
         client.onStatus = { [weak self] state, detail in
             // The server reports a fatal decode failure (e.g. a wedged CUDA context)
@@ -117,6 +131,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem?.title = shortcut.isEmpty
             ? "Start / Stop Blurting"
             : "Start / Stop Blurting  (\(shortcut))"
+    }
+
+    /// Copy the last finalized dictation to the clipboard — a safety net for when
+    /// the text got injected into the wrong field. Held in memory only.
+    @objc private func copyLastDictation() {
+        guard let text = lastDictation, !text.isEmpty else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
     }
 
     @objc private func showSettings() {

@@ -21,15 +21,22 @@ internal sealed class BlurtApp : IDisposable
     private readonly Hud _hud = new();
 
     private NotifyIcon? _tray;
-    private ToolStripMenuItem? _injectItem;
+    private ToolStripMenuItem? _toggleItem;
     private ToolStripMenuItem? _startupItem;
+    private ToolStripMenuItem? _copyLastItem;
     private HotKey? _hotKey;
+    private ModifierDoubleTap? _doubleTap;
     // Registered only while recording so it never swallows Esc globally otherwise.
     private HotKey? _cancelKey;
     private Icon? _currentIcon;
 
     private bool _recording;
     private Onboarding? _onboarding;
+    private SettingsWindow? _settings;
+
+    // The most recent finalized dictation, kept in memory only so it can be
+    // recovered from the menu when it landed somewhere unexpected. Never persisted.
+    private string? _lastDictation;
 
     public BlurtApp(Application app)
     {
@@ -45,7 +52,7 @@ internal sealed class BlurtApp : IDisposable
 
         SetupTray();
         Wire();
-        SetupHotKey();
+        ApplyShortcut();
 
         // First-run setup until the user has seen it once. Unlike macOS there's no
         // Accessibility gate to clear — text injection works without any grant.
@@ -62,15 +69,15 @@ internal sealed class BlurtApp : IDisposable
     private void SetupTray()
     {
         var menu = new ContextMenuStrip();
-        Add(menu, "Start / Stop Blurting  (Ctrl+Alt+Space)", (_, _) => Toggle());
+        // Label gets the active shortcut appended by ApplyShortcut().
+        _toggleItem = new ToolStripMenuItem("Start / Stop Blurting", null, (_, _) => Toggle());
+        menu.Items.Add(_toggleItem);
+        _copyLastItem = new ToolStripMenuItem("Copy Last Dictation", null, (_, _) => CopyLastDictation())
+        { Enabled = false };
+        menu.Items.Add(_copyLastItem);
         menu.Items.Add(new ToolStripSeparator());
+        Add(menu, "Settings…", (_, _) => ShowSettings());
         Add(menu, "Setup…", (_, _) => ShowOnboarding());
-        Add(menu, "Set Server URL…", (_, _) => SetServer());
-        Add(menu, "Set Auth Token…", (_, _) => SetToken());
-
-        _injectItem = new ToolStripMenuItem("Insert via Typing (not Paste)", null, (_, _) => ToggleInject())
-        { Checked = Settings.InjectMode == "type", CheckOnClick = false };
-        menu.Items.Add(_injectItem);
 
         _startupItem = new ToolStripMenuItem("Start at Login", null, (_, _) => ToggleStartup())
         { Checked = Settings.StartAtLogin, CheckOnClick = false };
@@ -125,7 +132,12 @@ internal sealed class BlurtApp : IDisposable
         {
             _hud.Hide();
             _client.Close();
-            if (!string.IsNullOrEmpty(text)) TextInjector.Inject(text);
+            if (!string.IsNullOrEmpty(text))
+            {
+                _lastDictation = text;
+                if (_copyLastItem is not null) _copyLastItem.Enabled = true;
+                TextInjector.Inject(text);
+            }
         });
         _client.OnStatus = (state, detail) => _ui.Invoke(() =>
         {
@@ -149,11 +161,40 @@ internal sealed class BlurtApp : IDisposable
         });
     }
 
-    private void SetupHotKey()
+    /// (Re)arm the dictation trigger from Settings.Shortcut, and reflect the active
+    /// shortcut in the tray toggle label. The twin of the Mac client's applyShortcut().
+    private void ApplyShortcut()
     {
-        _hotKey = HotKey.CtrlAltSpace(() => _ui.Invoke(Toggle));
-        if (!_hotKey.Registered)
-            Notify("Hotkey unavailable", "Could not register Ctrl+Alt+Space. Another app may own it.");
+        _hotKey?.Dispose();
+        _hotKey = null;
+        _doubleTap?.Dispose();
+        _doubleTap = null;
+
+        switch (Settings.Shortcut)
+        {
+            case Settings.ShortcutMode.DoubleTap:
+                // The low-level hook fires on the UI thread; post async so we never
+                // stall the system-wide input pipeline while (re)connecting.
+                _doubleTap = new ModifierDoubleTap(() => _ui.InvokeAsync(Toggle));
+                break;
+            case Settings.ShortcutMode.CtrlAltSpace:
+                _hotKey = HotKey.CtrlAltSpace(() => _ui.Invoke(Toggle));
+                break;
+            case Settings.ShortcutMode.Custom:
+                _hotKey = new HotKey(Settings.HotKeyMods, Settings.HotKeyVk, () => _ui.Invoke(Toggle));
+                break;
+            case Settings.ShortcutMode.Off:
+                break;
+        }
+
+        if (_hotKey is { Registered: false })
+            Notify("Hotkey unavailable", $"Could not register {ShortcutLabel.Current()}. Another app may own it.");
+
+        var label = ShortcutLabel.Current();
+        if (_toggleItem is not null)
+            _toggleItem.Text = label.Length == 0
+                ? "Start / Stop Blurting"
+                : $"Start / Stop Blurting  ({label})";
     }
 
     // MARK: dictation state machine
@@ -233,22 +274,36 @@ internal sealed class BlurtApp : IDisposable
         win.Activate();
     }
 
-    private void SetServer()
+    /// Copy the last finalized dictation to the clipboard — a safety net for when
+    /// the text got injected into the wrong field. Held in memory only.
+    private void CopyLastDictation()
     {
-        var v = PromptWindow.Ask("Server WebSocket URL", Settings.ServerUrl, "e.g. wss://192.168.1.50:25878/ws");
-        if (v is not null) Settings.ServerUrl = v;
+        if (string.IsNullOrEmpty(_lastDictation)) return;
+        try { System.Windows.Clipboard.SetText(_lastDictation); } catch { }
     }
 
-    private void SetToken()
+    private void ShowSettings()
     {
-        var v = PromptWindow.Ask("Auth token (blank = none)", Settings.AuthToken);
-        if (v is not null) Settings.AuthToken = v;
-    }
-
-    private void ToggleInject()
-    {
-        Settings.InjectMode = Settings.InjectMode == "type" ? "paste" : "type";
-        if (_injectItem is not null) _injectItem.Checked = Settings.InjectMode == "type";
+        if (_settings is not null) { _settings.Activate(); return; }
+        var win = new SettingsWindow
+        {
+            OnChange = ApplyShortcut,
+            // Suspend our own triggers while a custom combo is being recorded, so the
+            // active hotkey/double-tap can't swallow the keys being typed into the well.
+            OnCaptureActive = capturing =>
+            {
+                if (capturing)
+                {
+                    _hotKey?.Dispose(); _hotKey = null;
+                    _doubleTap?.Dispose(); _doubleTap = null;
+                }
+                else ApplyShortcut();
+            },
+            OnClose = () => _settings = null,
+        };
+        _settings = win;
+        win.Show();
+        win.Activate();
     }
 
     private void ToggleStartup()
@@ -367,6 +422,7 @@ internal sealed class BlurtApp : IDisposable
     public void Dispose()
     {
         _hotKey?.Dispose();
+        _doubleTap?.Dispose();
         DisposeCancelKey();
         _audio.Dispose();
         _client.Close();

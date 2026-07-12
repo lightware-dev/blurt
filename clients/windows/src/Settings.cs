@@ -16,6 +16,11 @@ internal static class Settings
         public string InjectMode { get; set; } = "paste"; // "paste" or "type"
         public bool DidOnboard { get; set; }
         public bool StartAtLogin { get; set; }
+        public string Shortcut { get; set; } = "doubleTap"; // ShortcutMode name
+        // Custom chord: a Win32 virtual-key + a MOD_* modifier mask. Defaults to
+        // Ctrl+Alt+Space so a fresh "Custom" pick isn't an empty, unregisterable combo.
+        public uint HotKeyVk { get; set; } = 0x20;                 // VK_SPACE
+        public uint HotKeyMods { get; set; } = 0x0002 | 0x0001;    // MOD_CONTROL | MOD_ALT
     }
 
     private static readonly string Dir =
@@ -77,5 +82,29 @@ internal static class Settings
     {
         get => Current.StartAtLogin;
         set { Current.StartAtLogin = value; Save(); }
+    }
+
+    /// How dictation is summoned. `Custom` uses HotKeyVk/HotKeyMods. Defaults to
+    /// DoubleTap (double-tap Ctrl), matching the Mac client's double-tap ⌥ default.
+    public enum ShortcutMode { DoubleTap, CtrlAltSpace, Custom, Off }
+
+    public static ShortcutMode Shortcut
+    {
+        get => Enum.TryParse<ShortcutMode>(Current.Shortcut, out var m) ? m : ShortcutMode.DoubleTap;
+        set { Current.Shortcut = value.ToString(); Save(); }
+    }
+
+    /// Win32 virtual-key code of the custom chord.
+    public static uint HotKeyVk
+    {
+        get => Current.HotKeyVk;
+        set { Current.HotKeyVk = value; Save(); }
+    }
+
+    /// MOD_* modifier mask of the custom chord (as RegisterHotKey expects).
+    public static uint HotKeyMods
+    {
+        get => Current.HotKeyMods;
+        set { Current.HotKeyMods = value; Save(); }
     }
 }

@@ -9,17 +9,20 @@ same server protocol, same behaviour.
 
 - **Tray icon** — a mic that turns coral while recording. Right-click for the menu;
   double-click to toggle dictation.
-- **Global hotkey** — **Ctrl+Alt+Space** toggles dictation from anywhere. (Windows
-  reserves plain Alt+Space for the window system menu, so Blurt can't reuse the
-  Mac's ⌥Space.)
+- **Global shortcut** — choose in **Settings…** how you summon Blurt from anywhere:
+  **double-tap Ctrl** (default, the twin of the Mac's double-tap ⌥), **Ctrl+Alt+Space**
+  (Windows reserves plain Alt+Space for the window system menu, so Blurt can't reuse
+  the Mac's ⌥Space), a **custom** click-to-record chord, or **off** (tray only).
+- **Copy Last Dictation** — a tray item that copies the most recent transcript to the
+  clipboard, for when it landed in the wrong field. Kept in memory only, never stored.
 - **Live HUD** — a borderless, click-through overlay near the bottom of the screen
   shows partial text as you speak, with a live audio **waveform** (a voice-shaped
   FFT meter, brand yellow) that ripples while listening and swells with your voice.
   On multi-monitor setups it appears on the screen under the **mouse cursor**.
 - **Text injection** — on stop, the final transcript is inserted into whatever field
   has focus, either by **paste** (clipboard + Ctrl+V, fast) or **type** (per-character
-  Unicode keystrokes, works in terminals). Toggle in the tray menu. Unlike macOS,
-  Windows needs **no Accessibility permission** for this.
+  Unicode keystrokes, works in terminals). Choose the mode in **Settings…**. Unlike
+  macOS, Windows needs **no Accessibility permission** for this.
 - **First-run setup** — point Blurt at your server URL + optional auth token, run a
   quick mic test, and optionally start at sign-in.
 - **Auto-update** — on launch (and via **Check for Updates…** in the tray menu) Blurt
@@ -37,6 +40,8 @@ Mirrors the Mac client file-for-file:
 | `Program.cs` | STA entry point, WPF app host | `main.swift` |
 | `BlurtApp.cs` | Tray + menu, wiring, dictation state machine | `AppDelegate.swift` |
 | `HotKey.cs` | `RegisterHotKey` on a hidden message window | `HotKey.swift` |
+| `ModifierDoubleTap.cs` | `WH_KEYBOARD_LL` hook — double-tap Ctrl to fire | `ModifierDoubleTap.swift` |
+| `SettingsWindow.cs` | Settings window (shortcut / server / insertion) | `SettingsWindow.swift` |
 | `AudioCapture.cs` | NAudio mic → 16 kHz mono PCM16 frames + FFT bands | `AudioCapture.swift` |
 | `Spectrum.cs` | PCM16 → log-spaced FFT band magnitudes | `Spectrum.swift` |
 | `DictationClient.cs` | `ClientWebSocket` → `{start}`/PCM/`{stop}` | `DictationClient.swift` |
@@ -73,8 +78,9 @@ dotnet publish Blurt.csproj -c Release -r win-x64 --self-contained true `
 ```
 
 First run: the setup window opens. Enter your server URL (e.g.
-`wss://192.168.1.50:25878/ws`), run the mic test, hit **Start Blurting**, then press
-**Ctrl+Alt+Space** in any app and talk.
+`wss://192.168.1.50:25878/ws`), run the mic test, hit **Start Blurting**, then
+**double-tap Ctrl** in any app and talk. (Prefer a different trigger? Pick one under
+**Settings…** in the tray menu.)
 
 > **No local Windows box?** You don't need one — the CI workflow builds and
 > publishes `Blurt.exe` for you (see below). Download the artifact/zip and run it
