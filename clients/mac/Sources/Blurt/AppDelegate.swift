@@ -1,11 +1,13 @@
 import AppKit
 import AVFoundation
 import ApplicationServices
+import Carbon
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var injectItem: NSMenuItem?
     private var hotKey: HotKey?
+    private var doubleTap: ModifierDoubleTap?
+    private var toggleItem: NSMenuItem?
     // Registered only while recording so it never swallows Esc globally otherwise.
     private var cancelKey: HotKey?
 
@@ -14,11 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hud = HUD()
     private var recording = false
     private var onboarding: OnboardingWindowController?
+    private var settingsWindow: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         wire()
-        setupHotKey()
+        applyShortcut()
         // Show the first-run permissions screen until the user has seen it *and*
         // Accessibility is actually granted (without it Blurt can't type anything).
         if !Settings.didOnboard || !AXIsProcessTrusted() {
@@ -35,17 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateIcon()
 
         let menu = NSMenu()
-        add(menu, "Start / Stop Blurting  (⌥Space)", #selector(toggle))
+        toggleItem = add(menu, "Start / Stop Blurting", #selector(toggle))
         menu.addItem(.separator())
+        add(menu, "Settings…", #selector(showSettings))
         add(menu, "Setup & Permissions…", #selector(showOnboarding))
-        add(menu, "Set Server URL…", #selector(setServer))
-        add(menu, "Set Auth Token…", #selector(setToken))
-        let inject = NSMenuItem(title: "Insert via Typing (not Paste)",
-                                action: #selector(toggleInject), keyEquivalent: "")
-        inject.target = self
-        inject.state = Settings.injectMode == "type" ? .on : .off
-        injectItem = inject
-        menu.addItem(inject)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit Blurt", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
@@ -53,10 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    private func add(_ menu: NSMenu, _ title: String, _ sel: Selector) {
+    @discardableResult
+    private func add(_ menu: NSMenu, _ title: String, _ sel: Selector) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: sel, keyEquivalent: "")
         item.target = self
         menu.addItem(item)
+        return item
     }
 
     private func updateIcon() {
@@ -95,13 +93,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func setupHotKey() {
-        hotKey = HotKey(keyCode: Settings.hotKeyCode, modifiers: Settings.hotKeyMods) { [weak self] in
-            self?.toggle()
+    /// (Re)arm the dictation trigger from Settings.shortcutMode, and reflect the
+    /// active shortcut in the menu item title.
+    private func applyShortcut() {
+        hotKey = nil
+        doubleTap = nil
+        let fire: () -> Void = { [weak self] in self?.toggle() }
+        switch Settings.shortcutMode {
+        case .doubleTap:
+            doubleTap = ModifierDoubleTap(onFire: fire)
+        case .optionSpace:
+            hotKey = HotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey), onFire: fire)
+        case .custom:
+            hotKey = HotKey(keyCode: Settings.hotKeyCode, modifiers: Settings.hotKeyMods, onFire: fire)
+        case .off:
+            break
         }
-        if hotKey == nil {
-            notify("Hotkey unavailable", "Could not register ⌥Space. Another app may own it.")
+        if hotKey == nil, Settings.shortcutMode == .optionSpace || Settings.shortcutMode == .custom {
+            notify("Hotkey unavailable",
+                   "Could not register \(ShortcutLabel.current()). Another app may own it.")
         }
+        let shortcut = ShortcutLabel.current()
+        toggleItem?.title = shortcut.isEmpty
+            ? "Start / Stop Blurting"
+            : "Start / Stop Blurting  (\(shortcut))"
+    }
+
+    @objc private func showSettings() {
+        if settingsWindow == nil {
+            let controller = SettingsWindowController()
+            controller.onChange = { [weak self] in self?.applyShortcut() }
+            controller.onCaptureActive = { [weak self] capturing in
+                // Suspend triggers while recording a combo so the active hotkey
+                // can't swallow the keys being typed into the capture well.
+                if capturing {
+                    self?.hotKey = nil
+                    self?.doubleTap = nil
+                } else {
+                    self?.applyShortcut()
+                }
+            }
+            settingsWindow = controller
+        }
+        settingsWindow?.present()
     }
 
     @objc private func showOnboarding() {
@@ -165,40 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         client.close()
     }
 
-    // MARK: settings actions
-
-    @objc private func setServer() {
-        if let v = prompt("Server WebSocket URL", Settings.serverURL,
-                          "e.g. wss://192.168.1.50:25878/ws") {
-            Settings.serverURL = v.trimmingCharacters(in: .whitespaces)
-        }
-    }
-
-    @objc private func setToken() {
-        if let v = prompt("Auth token (blank = none)", Settings.authToken, "") {
-            Settings.authToken = v.trimmingCharacters(in: .whitespaces)
-        }
-    }
-
-    @objc private func toggleInject() {
-        Settings.injectMode = Settings.injectMode == "type" ? "paste" : "type"
-        injectItem?.state = Settings.injectMode == "type" ? .on : .off
-    }
-
     // MARK: helpers
-
-    private func prompt(_ title: String, _ value: String, _ placeholder: String) -> String? {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.stringValue = value
-        field.placeholderString = placeholder
-        alert.accessoryView = field
-        NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil
-    }
 
     private func notify(_ title: String, _ body: String) {
         let alert = NSAlert()

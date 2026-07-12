@@ -3,28 +3,17 @@
 import { useEffect, useRef, useState } from 'react'
 
 /**
- * The whole pitch, animated: you blurt something half-formed and rambling into
- * the HUD (the same near-black pill the Mac app shows — flowing yellow waveform,
- * live mono partials truncating from the left), release the hotkey, and clean
- * composed text lands where your cursor is. "Say it badly, get it typed well."
+ * The whole pitch, animated: you talk, live partials stream into the HUD (the
+ * same near-black pill the Mac app shows — flowing yellow waveform, mono text
+ * truncating from the left), you release the hotkey, and that exact transcript
+ * lands where your cursor is. What's in the HUD is what gets typed — Parakeet's
+ * partials already carry punctuation and caps; there's no rewrite step.
  */
-const PAIRS: { raw: string; clean: string }[] = [
-    {
-        raw: 'um so like, can you send maria the uh the q3 deck before before standup',
-        clean: 'Can you send Maria the Q3 deck before standup?',
-    },
-    {
-        raw: 'note to self buy oat milk and uh cancel that subscription i keep forgetting about',
-        clean: 'Note to self: buy oat milk and cancel that subscription I keep forgetting about.',
-    },
-    {
-        raw: 'hey team just shipping a quick fix for the login thing that was that was breaking on safari',
-        clean: 'Hey team — shipping a quick fix for the login bug that was breaking on Safari.',
-    },
-    {
-        raw: 'reply to the client and tell them yeah friday works but not not before noon',
-        clean: 'Reply to the client: yes to Friday, but not before noon.',
-    },
+const TEXTS: string[] = [
+    'Can you send Maria the Q3 deck before standup?',
+    'Note to self, buy oat milk and cancel that subscription I keep forgetting about.',
+    'Hey team, shipping a quick fix for the login bug that was breaking on Safari.',
+    'Reply to the client, yes to Friday, but not before noon.',
 ]
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -168,7 +157,7 @@ export default function BlurtDemo() {
 
     useEffect(() => {
         let cancelled = false
-        const pair = PAIRS[i]
+        const words = TEXTS[i].split(' ')
 
         async function run() {
             // hotkey down: the HUD pops up and listens for a beat
@@ -177,19 +166,22 @@ export default function BlurtDemo() {
             await sleep(700)
             if (cancelled) return
 
-            // live partials stream into the HUD, char by char with human-ish jitter
+            // live partials stream into the HUD — the GPU re-decodes every
+            // ~350ms, so words land in little bursts, not one keystroke at a time
             setPhase('raw')
-            for (let c = 1; c <= pair.raw.length; c++) {
+            let w = 0
+            while (w < words.length) {
                 if (cancelled) return
-                setTyped(pair.raw.slice(0, c))
-                const ch = pair.raw[c - 1]
-                await sleep(ch === ' ' ? 26 : 30 + Math.random() * 45)
+                w = Math.min(w + 1 + Math.floor(Math.random() * 2), words.length)
+                setTyped(words.slice(0, w).join(' '))
+                await sleep(220 + Math.random() * 260)
             }
             await sleep(420)
             if (cancelled) return
 
             // hotkey released: the HUD just vanishes — no "cleaning up…" status,
-            // same as the app — and a beat later the clean text lands at the cursor
+            // same as the app — and a beat later the exact transcript you watched
+            // stream is pasted at the cursor
             setPhase('processing')
             await sleep(450)
             if (cancelled) return
@@ -197,7 +189,7 @@ export default function BlurtDemo() {
             setPhase('clean')
             await sleep(3200)
             if (cancelled) return
-            setI(prev => (prev + 1) % PAIRS.length)
+            setI(prev => (prev + 1) % TEXTS.length)
         }
 
         run()
@@ -237,7 +229,7 @@ export default function BlurtDemo() {
             <div className="min-h-[92px] px-6 pt-6 sm:px-8">
                 {phase === 'clean' ? (
                     <p key={i} className="font-sans text-lg leading-relaxed text-bone sm:text-xl">
-                        <span className="mark-sweep">{PAIRS[i].clean}</span>
+                        <span className="mark-sweep">{TEXTS[i]}</span>
                         <span className="ml-1 inline-block w-[0.55em] animate-blink bg-bone/70 align-baseline">
                             {' '}
                         </span>

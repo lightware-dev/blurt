@@ -31,6 +31,19 @@ enum Settings {
         set { d.set(NSNumber(value: newValue), forKey: "hotKeyMods") }
     }
 
+    /// How dictation is summoned. `custom` uses `hotKeyCode`/`hotKeyMods`.
+    enum ShortcutMode: String {
+        case doubleTap    // tap ⌥ twice (default)
+        case optionSpace  // ⌥Space
+        case custom       // user-recorded key combo
+        case off          // menu bar only
+    }
+
+    static var shortcutMode: ShortcutMode {
+        get { ShortcutMode(rawValue: d.string(forKey: "shortcutMode") ?? "") ?? .doubleTap }
+        set { d.set(newValue.rawValue, forKey: "shortcutMode") }
+    }
+
     /// Whether the first-run permissions screen has been dismissed at least once.
     static var didOnboard: Bool {
         get { d.bool(forKey: "didOnboard") }
