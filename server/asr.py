@@ -58,13 +58,19 @@ class ParakeetASR:
 
         t0 = time.time()
         print(f"[asr] loading {self.model_name} ...", flush=True)
-        model = nemo_asr.models.ASRModel.from_pretrained(self.model_name)
+        # Load onto CPU first. from_pretrained loads the fp32 checkpoint state-dict
+        # onto the target device and leaves that ~2.4 GB copy *live* on the GPU
+        # alongside the working weights — so loading straight to CUDA costs ~5.5 GB
+        # (two full copies), not ~2 GB. Keeping the load on CPU means only the final
+        # (bf16) weights ever reach the GPU; the transient fp32 copy is freed in RAM.
+        model = nemo_asr.models.ASRModel.from_pretrained(self.model_name, map_location="cpu")
         model.eval()
         if torch.cuda.is_available():
-            model.to("cuda")
-            # bf16 halves VRAM with output identical to fp32 for this model.
+            # Convert to bf16 *before* moving to CUDA so the fp32 weights never land
+            # there. bf16 halves VRAM with output identical to fp32 for this model.
             if not self.fp32 and torch.cuda.is_bf16_supported():
                 model.to(torch.bfloat16)
+            model.to("cuda")
         self.dtype = next(model.parameters()).dtype
         _disable_cuda_graph_decoder(model)
         self._model = model
