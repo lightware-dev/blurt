@@ -221,7 +221,7 @@ export default function BlurtDemo() {
                 </span>
                 <span className="ml-auto flex items-center gap-1 font-mono text-[11px] text-bone-dim">
                     <kbd className="rounded border border-ink-600 bg-ink-800 px-1.5 py-0.5">⌥</kbd>
-                    <kbd className="rounded border border-ink-600 bg-ink-800 px-1.5 py-0.5">Space</kbd>
+                    <kbd className="rounded border border-ink-600 bg-ink-800 px-1.5 py-0.5">⌥</kbd>
                 </span>
             </div>
 

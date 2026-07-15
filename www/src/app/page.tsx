@@ -148,8 +148,8 @@ export default function Home() {
                 <div className="mt-14">
                     <BlurtDemo />
                     <p className="mt-3 text-center font-mono text-xs text-bone-dim">
-                        press <KeyCap>⌥</KeyCap>
-                        <KeyCap>Space</KeyCap>, ramble, release. clean text where your cursor is.
+                        tap <KeyCap>⌥</KeyCap>
+                        <KeyCap>⌥</KeyCap>, ramble, tap again. clean text where your cursor is.
                     </p>
                 </div>
             </section>
@@ -222,7 +222,7 @@ export default function Home() {
                 <div className="mx-auto max-w-5xl px-6 py-20">
                     <h2 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">
                         <KeyCap>⌥</KeyCap>
-                        <KeyCap>Space</KeyCap>. Talk. Done.
+                        <KeyCap>⌥</KeyCap>. Talk. Done.
                     </h2>
                     <p className="mt-4 max-w-xl text-bone/70">
                         No “workspace”. No onboarding flow. The entire product is one hotkey
@@ -292,7 +292,7 @@ export default function Home() {
                         {'\n'}
                         {'   '}Active:{' '}
                         <span className="text-marker">blurting (running)</span> since you
-                        pressed ⌥Space
+                        double-tapped ⌥
                         {'\n'}
                         {'     '}Docs: it’s the past tense of “blurted.” we regret nothing.
                         {'\n'}
@@ -321,7 +321,7 @@ export default function Home() {
                     <span className="text-bone">PORT</span>.
                 </p>
                 <p className="mt-2 font-mono text-xs text-bone-dim">
-                    // no, there is no `blurtd stop`. you press ⌥Space again. that’s the stop.
+                    // no, there is no `blurtd stop`. you double-tap ⌥ again. that’s the stop.
                 </p>
             </section>
 
@@ -380,7 +380,7 @@ export default function Home() {
                 </div>
                 <p className="mt-5 font-mono text-xs text-bone-dim">
                     clone → <span className="text-bone">pip install</span> → build the Mac app →{' '}
-                    <span className="text-bone">⌥Space</span>. that’s the whole funnel.
+                    <span className="text-bone">⌥⌥</span>. that’s the whole funnel.
                 </p>
             </section>
 
