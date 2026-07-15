@@ -32,7 +32,7 @@ Two parts:
   VAD). Each active segment is re-decoded every ~350 ms for live partials and
   committed on a pause. VRAM is bounded by the *longest single utterance*, not the
   session length, and every decode sees full segment context for low WER.
-- **VRAM optimizations:** bf16 by default (fp32 opt-out), `torch.inference_mode`,
+- **VRAM optimizations:** bf16 weights loaded straight to the GPU, `torch.inference_mode`,
   `MAX_SEGMENT_S` caps an unbroken utterance, and CUDA cache is released after long
   segments so peak memory doesn't stick.
 
@@ -45,18 +45,22 @@ what it does. `./blurtd` is a thin wrapper around `python -m server`.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt          # torch must match your CUDA (5090 → cu130)
 
-./blurtd                                  # default model (v3, multilingual)
-./blurtd --list-models                    # see all Parakeet variants
-./blurtd -m v2 --port 8000                # English-only 0.6B on another port
+./blurtd                                  # serve parakeet-tdt-0.6b-v3 (bf16, GPU)
+./blurtd --port 8000                      # on another port
 ```
+
+The model is fixed at **`parakeet-tdt-0.6b-v3`**, run in bf16 on the GPU. On first
+start it converts the published fp32 checkpoint to bf16 and caches it under
+`~/.cache/blurt/`; every start after loads that bf16 file straight onto the GPU.
+Pre-build the cache without starting the server with `python scripts/build_bf16_ckpt.py`.
 
 Serves `wss://<ip>:25878/ws` when `certs/cert.pem` + `certs/key.pem` exist (they do),
 otherwise plain `ws://`. Open `https://<ip>:25878/` for a **browser mic test page**.
 The default port **`25878`** is a mnemonic — `2-5-8-7-8` spells **BLURT** on a phone
 keypad (B→2, L→5, U→8, R→7, T→8). Override it with `--port` or `PORT`.
 
-Config (env or `.env`, all optional): `PARAKEET_MODEL`, `PARAKEET_FP32`, `HOST`,
-`PORT`, `AUTH_TOKEN`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
+Config (env or `.env`, all optional): `PARAKEET_BF16_CKPT`, `HOST`, `PORT`,
+`AUTH_TOKEN`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
 `LOG_STATS`. See `.env.example`. `LOG_STATS` (default on) logs per-dictation
 metadata — packet count, bytes, audio duration, segments — never transcript text;
 set `LOG_STATS=0` to silence it.
@@ -72,7 +76,7 @@ injects your host driver at run time (`--gpus all`).
 ```bash
 docker build -t blurtd .
 docker run --gpus all -p 25878:25878 -v blurt-cache:/root/.cache blurtd
-#   append flags like a bare invocation:  docker run … blurtd -m v2 --port 8000
+#   append flags like a bare invocation:  docker run … blurtd --port 8000
 # or:
 docker compose up --build
 ```

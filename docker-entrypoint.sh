@@ -8,10 +8,10 @@
 # /app/certs, or disable this entirely with BLURT_AUTOCERT=0.
 set -e
 
-# Skip all of this for the metadata/help paths — no need to mint a cert.
+# Skip all of this for the help paths — no need to mint a cert.
 for arg in "$@"; do
   case "$arg" in
-    --list-models | -h | --help) exec python -m server "$@" ;;
+    -h | --help) exec python -m server "$@" ;;
   esac
 done
 

@@ -2,9 +2,14 @@
 Parakeet ASR engine — a thin, fast wrapper around NVIDIA NeMo's
 parakeet-tdt-0.6b-v3 model for in-memory streaming decode.
 
-Design goals: minimal VRAM (bf16, ~1.5-2 GB), low WER (full-context decode of
+Design goals: minimal VRAM (bf16, ~1.3 GB), low WER (full-context decode of
 each speech segment), and no per-call disk I/O (we feed numpy arrays straight to
 the model instead of writing a temp wav every tick like a naive prototype).
+
+On first GPU run we convert the published fp32 checkpoint to bf16 and cache it as
+a .nemo (see bf16_ckpt_path); every subsequent start restores that bf16 file
+directly onto the GPU, which loads faster (~13 s vs ~22 s) and never materialises
+an fp32 copy. Pre-build it without starting the server via scripts/build_bf16_ckpt.py.
 """
 
 from __future__ import annotations
@@ -28,9 +33,8 @@ if not hasattr(np, "sctypes"):
         "others": [bool, object, bytes, str, np.void],
     }
 
-from server.models import resolve as resolve_model
-
-DEFAULT_MODEL = resolve_model(os.getenv("PARAKEET_MODEL"))
+# The one model we support: multilingual 0.6B TDT, run in bf16 on the GPU.
+MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
 
 
 class ParakeetASR:
@@ -42,13 +46,17 @@ class ParakeetASR:
     free.
     """
 
-    def __init__(self, model_name: str | None = None, fp32: bool | None = None):
-        self.model_name = resolve_model(model_name) if model_name else DEFAULT_MODEL
-        self.fp32 = (os.getenv("PARAKEET_FP32") == "1") if fp32 is None else fp32
+    def __init__(self):
+        self.model_name = MODEL_ID
         self._model = None
         self._lock = threading.Lock()
         self.dtype = None
         self._torch = None
+
+    def bf16_ckpt_path(self) -> str:
+        """Where the pre-converted bf16 .nemo lives (override with PARAKEET_BF16_CKPT)."""
+        return os.getenv("PARAKEET_BF16_CKPT") or os.path.expanduser(
+            "~/.cache/blurt/parakeet-tdt-0.6b-v3-bf16.nemo")
 
     def load(self):
         if self._model is not None:
@@ -57,20 +65,39 @@ class ParakeetASR:
         import nemo.collections.asr as nemo_asr
 
         t0 = time.time()
-        print(f"[asr] loading {self.model_name} ...", flush=True)
-        # Load onto CPU first. from_pretrained loads the fp32 checkpoint state-dict
-        # onto the target device and leaves that ~2.4 GB copy *live* on the GPU
-        # alongside the working weights — so loading straight to CUDA costs ~5.5 GB
-        # (two full copies), not ~2 GB. Keeping the load on CPU means only the final
-        # (bf16) weights ever reach the GPU; the transient fp32 copy is freed in RAM.
-        model = nemo_asr.models.ASRModel.from_pretrained(self.model_name, map_location="cpu")
-        model.eval()
-        if torch.cuda.is_available():
-            # Convert to bf16 *before* moving to CUDA so the fp32 weights never land
-            # there. bf16 halves VRAM with output identical to fp32 for this model.
-            if not self.fp32 and torch.cuda.is_bf16_supported():
-                model.to(torch.bfloat16)
+        if not (torch.cuda.is_available() and torch.cuda.is_bf16_supported()):
+            raise RuntimeError(
+                "Blurt only supports parakeet-tdt-0.6b-v3 in bf16 on a CUDA GPU; "
+                "no bf16-capable CUDA device was found.")
+        ckpt = self.bf16_ckpt_path()
+
+        if os.path.exists(ckpt):
+            # Fast path: the bf16 checkpoint loads straight onto the GPU with no fp32
+            # ever materialising. set_default_dtype makes NeMo build the params bf16
+            # directly (peak ~1.3 GB, vs a ~2.5 GB fp32 transient if restored as fp32
+            # then cast); the following to(bfloat16) also converts preprocessor buffers
+            # so the featurizer's output dtype matches the bf16 convs (else the mel
+            # features come out fp32 and the first conv raises a dtype mismatch).
+            print(f"[asr] loading bf16 checkpoint {ckpt} ...", flush=True)
+            torch.set_default_dtype(torch.bfloat16)
+            try:
+                model = nemo_asr.models.ASRModel.restore_from(ckpt, map_location="cuda")
+            finally:
+                torch.set_default_dtype(torch.float32)
+            model.eval()
+            model.to(torch.bfloat16)
+        else:
+            # First run: pull the published fp32 checkpoint onto CPU, cast to bf16, cache
+            # it for next time, then move to CUDA. Loading on CPU (not straight to the
+            # GPU) keeps from_pretrained's transient ~2.4 GB fp32 copy in RAM instead of
+            # VRAM; only the final bf16 weights reach the GPU.
+            print(f"[asr] loading {self.model_name} (first run — building bf16 cache) ...", flush=True)
+            model = nemo_asr.models.ASRModel.from_pretrained(self.model_name, map_location="cpu")
+            model.eval()
+            model.to(torch.bfloat16)
+            self._save_bf16_ckpt(model, ckpt)
             model.to("cuda")
+
         self.dtype = next(model.parameters()).dtype
         _disable_cuda_graph_decoder(model)
         self._model = model
@@ -78,6 +105,16 @@ class ParakeetASR:
         _quiet_nemo_transcribe_warning()
         print(f"[asr] ready in {time.time()-t0:.1f}s (dtype={self.dtype})", flush=True)
         return model
+
+    @staticmethod
+    def _save_bf16_ckpt(model, ckpt: str):
+        """Best-effort save of the bf16 model so subsequent starts load it directly."""
+        try:
+            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+            model.save_to(ckpt)
+            print(f"[asr] cached bf16 checkpoint -> {ckpt}", flush=True)
+        except Exception as e:  # a cache miss is not worth failing startup over
+            print(f"[asr] warn: could not cache bf16 checkpoint: {e}", flush=True)
 
     def transcribe(self, audio_f32: np.ndarray) -> str:
         """Decode a mono float32 16 kHz array to text. Returns '' for empty/silent input."""

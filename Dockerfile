@@ -58,6 +58,6 @@ ENV HOST=0.0.0.0 \
 EXPOSE 25878
 
 # The entrypoint mints a TLS cert if needed, then runs `python -m server`.
-# Append daemon flags as CMD, e.g.  docker run ... blurtd -m v2 --port 8000
+# Append daemon flags as CMD, e.g.  docker run ... blurtd --port 8000
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD []
