@@ -149,7 +149,8 @@ export default function Home() {
                     <BlurtDemo />
                     <p className="mt-3 text-center font-mono text-xs text-bone-dim">
                         tap <KeyCap>⌥</KeyCap>
-                        <KeyCap>⌥</KeyCap>, ramble, tap again. clean text where your cursor is.
+                        <KeyCap>⌥</KeyCap>, ramble, tap again to finish (<KeyCap>Esc</KeyCap> to
+                        cancel). clean text where your cursor is.
                     </p>
                 </div>
             </section>
@@ -321,7 +322,7 @@ export default function Home() {
                     <span className="text-bone">PORT</span>.
                 </p>
                 <p className="mt-2 font-mono text-xs text-bone-dim">
-                    // no, there is no `blurtd stop`. you double-tap ⌥ again. that’s the stop.
+                    // no, there is no `blurtd stop`. double-tap ⌥ again to finish, or Esc to bail.
                 </p>
             </section>
 
