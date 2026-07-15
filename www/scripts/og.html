@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500&display=block"
+  rel="stylesheet"
+/>
+<style>
+  :root {
+    --ink-950: #090a0c;
+    --ink-900: #0f1115;
+    --ink-700: #23262d;
+    --ink-600: #30343d;
+    --bone: #ece6d8;
+    --bone-dim: #8f8b7e;
+    --marker: #e8ff32;
+    --coral: #ff5943;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background-color: var(--ink-950);
+    background-image: radial-gradient(var(--ink-700) 1.5px, transparent 1.5px);
+    background-size: 26px 26px;
+    background-position: -1px -1px;
+    color: var(--bone);
+    font-family: 'Space Grotesk', sans-serif;
+    display: flex;
+    flex-direction: column;
+    padding: 56px 72px 52px;
+    position: relative;
+  }
+  /* soft vignette so the grid fades at the edges */
+  .vignette {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 90% 80% at 40% 45%, transparent 55%, rgba(9,10,12,0.9) 100%);
+  }
+  .row { position: relative; }
+
+  /* ── top bar ── */
+  .top {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .wordmark {
+    display: flex; align-items: center; gap: 14px;
+    font-size: 40px; font-weight: 700; letter-spacing: -0.02em;
+  }
+  .cursor {
+    width: 17px; height: 44px; background: var(--marker); border-radius: 3px;
+  }
+  .pill {
+    display: flex; align-items: center; gap: 10px;
+    border: 1.5px solid var(--ink-700);
+    background: rgba(15, 17, 21, 0.7);
+    border-radius: 999px;
+    padding: 10px 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 19px;
+    color: var(--bone-dim);
+  }
+  .pill .dot { width: 9px; height: 9px; border-radius: 999px; background: var(--marker); }
+
+  /* ── headline ── */
+  .middle { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  h1 {
+    font-size: 78px; font-weight: 700; line-height: 1.0; letter-spacing: -0.025em;
+    color: var(--bone);
+  }
+  .made {
+    margin-top: 34px;
+    font-size: 58px; font-weight: 700; letter-spacing: -0.02em;
+    color: var(--ink-950);
+  }
+  .mark {
+    background: var(--marker);
+    padding: 2px 16px 6px;
+    border-radius: 4px;
+    box-shadow: 0 0 60px rgba(232, 255, 50, 0.18);
+  }
+
+  /* ── bottom bar ── */
+  .bottom {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .tagline { font-size: 21px; color: var(--bone-dim); }
+  .site {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 21px; color: var(--bone);
+  }
+  .rec { width: 12px; height: 12px; border-radius: 999px; background: var(--coral); }
+
+  /* HUD ribbon waveform (static frame of BlurtDemo's canvas) */
+  #wave { display: block; margin-top: 30px; width: 460px; height: 84px; }
+</style>
+</head>
+<body>
+  <div class="vignette"></div>
+
+  <div class="row top">
+    <div class="wordmark"><span class="cursor"></span><span>Blurt</span></div>
+    <div class="pill"><span class="dot"></span>yet another dictation app™</div>
+  </div>
+
+  <div class="row middle">
+    <h1>The world did not need<br />another voice-to-text app.</h1>
+    <div class="made"><span class="mark">We made one anyway.</span></div>
+    <canvas id="wave"></canvas>
+  </div>
+
+  <div class="row bottom">
+    <div class="tagline">runs on your GPU · no account · no cloud · $0/mo</div>
+    <div class="site"><span class="rec"></span>blurtvoice.com</div>
+  </div>
+
+  <script>
+    // One static frame of the HUD waveform — same three-ribbon drawing as
+    // BlurtDemo.tsx / the Mac app's Waveform.swift, with fixed phase + levels
+    // instead of the live FFT so the render is deterministic.
+    const W = 460, H = 84;
+    // cycles are doubled vs the HUD so the ribbons cross the midline more
+    // often — at this width a static frame reads more like a voice waveform
+    const RIBBONS = [
+      { color: '#586113', width: 2.8, amp: 0.95, cycles: 5.2, cycles2: 8.2, speed: -0.7, offset: 2.1, glow: false, level: 0.55 },
+      { color: '#97a621', width: 4.4, amp: 0.85, cycles: 4.2, cycles2: 6.6, speed: 1.25, offset: 4.4, glow: false, level: 0.7 },
+      { color: '#eeff65', width: 6.8, amp: 0.75, cycles: 3.2, cycles2: 5.4, speed: 0.9, offset: 0, glow: true, level: 0.95 },
+    ];
+    const canvas = document.getElementById('wave');
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    const phase = 3.9; // hand-picked frame: mid-sentence swell
+    const midY = H / 2;
+    const halfH = H / 2 - 2;
+    const step = 2;
+    const fadeSpan = 0.18;
+
+    RIBBONS.forEach(ribbon => {
+      const amp = ribbon.amp * ribbon.level * halfH;
+
+      const pts = [];
+      for (let x = 0; x <= W; x += step) {
+        const t = x / W;
+        const envelope = Math.sin(Math.PI * t) ** 1.3;
+        const s1 = Math.sin(t * 2 * Math.PI * ribbon.cycles + phase * ribbon.speed + ribbon.offset);
+        const s2 = Math.sin(t * 2 * Math.PI * ribbon.cycles2 - phase * ribbon.speed * 1.4 + ribbon.offset * 1.7);
+        const y = midY + amp * envelope * (0.62 * s1 + 0.38 * s2);
+        const edge = Math.min(Math.max(Math.min(t, 1 - t) / fadeSpan, 0), 1);
+        pts.push({ x, y, fade: edge * edge * (3 - 2 * edge) });
+      }
+
+      const n = pts.length;
+      const top = [], bottom = [];
+      for (let j = 0; j < n; j++) {
+        const prev = pts[Math.max(j - 1, 0)];
+        const next = pts[Math.min(j + 1, n - 1)];
+        const dx = next.x - prev.x;
+        const dy = next.y - prev.y;
+        const len = Math.max(Math.hypot(dx, dy), 0.001);
+        const halfW = Math.max(ribbon.width * pts[j].fade, 0.05) / 2;
+        const nx = (-dy / len) * halfW;
+        const ny = (dx / len) * halfW;
+        top.push([pts[j].x + nx, pts[j].y + ny]);
+        bottom.push([pts[j].x - nx, pts[j].y - ny]);
+      }
+
+      ctx.save();
+      if (ribbon.glow) {
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = 'rgba(232, 255, 50, 0.9)';
+      }
+      ctx.fillStyle = ribbon.color;
+      ctx.beginPath();
+      top.forEach(([x, y], j) => (j === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+      for (let j = n - 1; j >= 0; j--) ctx.lineTo(bottom[j][0], bottom[j][1]);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    });
+  </script>
+</body>
+</html>

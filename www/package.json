@@ -6,6 +6,7 @@
         "dev": "next dev --turbopack",
         "build": "next build",
         "start": "next start",
+        "og": "./scripts/generate-og.sh",
         "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
         "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview"
     },

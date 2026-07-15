@@ -35,11 +35,20 @@ export const metadata: Metadata = {
         siteName: 'Blurt',
         title,
         description,
+        images: [
+            {
+                url: '/og.png',
+                width: 1200,
+                height: 630,
+                alt: 'Blurt — The world did not need another voice-to-text app. We made one anyway.',
+            },
+        ],
     },
     twitter: {
         card: 'summary_large_image',
         title,
         description,
+        images: ['/og.png'],
     },
 }
 
