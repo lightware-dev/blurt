@@ -17,6 +17,27 @@ final class HUD {
     // Bumped on every show/hide so a scheduled flash auto-hide only fires if no
     // newer session has taken over the HUD in the meantime.
     private var generation = 0
+    private var screenObserver: Any?
+
+    init() {
+        // The window is built once and cached for the app's lifetime. If the display
+        // topology changes underneath it (sleep/wake, a monitor un/replugged, a
+        // resolution change), its screen association goes stale and it can end up
+        // ordered front but positioned off every visible screen — recording runs
+        // with an invisible HUD. Drop the cached window on any screen change so the
+        // next show() rebuilds it fresh on the current display.
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main) { [weak self] _ in
+            guard let self, let w = self.window else { return }
+            w.orderOut(nil)
+            self.window = nil
+        }
+    }
+
+    deinit {
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+    }
 
     func show(_ text: String) {
         DispatchQueue.main.async {
@@ -127,8 +148,19 @@ final class HUD {
 
     private func position() {
         guard let w = window, let screen = Self.activeScreen() else { return }
-        let x = screen.frame.midX - size.width / 2
-        let y = screen.frame.minY + 140
+        var x = screen.frame.midX - size.width / 2
+        var y = screen.frame.minY + 140
+        // Guard against a stale screen frame (e.g. one that lingers momentarily
+        // after a display is unplugged) placing the pill where no display can show
+        // it. If the computed rect isn't inside any connected screen, fall back to
+        // the primary display so the HUD is always visible somewhere.
+        let rect = NSRect(origin: NSPoint(x: x, y: y), size: size)
+        if !NSScreen.screens.contains(where: { $0.frame.intersects(rect) }),
+           let main = NSScreen.main {
+            NSLog("[Blurt] HUD off-screen at \(rect) on \(screen.frame); falling back to \(main.frame)")
+            x = main.frame.midX - size.width / 2
+            y = main.frame.minY + 140
+        }
         w.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)
     }
 
