@@ -396,6 +396,15 @@ export default function Home() {
                             A local voice-dictation thing. Not a startup. Not hiring. Not
                             raising. Runs on hardware you already own.
                         </p>
+                        <p className="mt-2 text-xs text-bone-dim">
+                            built by{' '}
+                            <a
+                                href="https://lightware.dev"
+                                className="text-bone hover:text-marker"
+                            >
+                                Lightware
+                            </a>
+                        </p>
                     </div>
                     <nav className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-xs text-bone-dim">
                         <a href={GITHUB} className="hover:text-bone">
