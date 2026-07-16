@@ -1,4 +1,5 @@
-# 🗣️ Blurt
+<img src="clients/mac/AppIcon.svg" width="28" align="top" alt=""> Blurt
+======
 
 **Say it badly, get it typed well.** A high-performance, fully-local speech-to-text
 dictation system — you talk faster than you type, so just let it out and Blurt
