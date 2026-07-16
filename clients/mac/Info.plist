@@ -7,7 +7,7 @@
     <key>CFBundleDisplayName</key>
     <string>Blurt</string>
     <key>CFBundleIdentifier</key>
-    <string>app.blurtvoice.menubar</string>
+    <string>com.blurtvoice.mac</string>
     <key>CFBundleExecutable</key>
     <string>Blurt</string>
     <key>CFBundleIconFile</key>

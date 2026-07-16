@@ -108,7 +108,9 @@ Checked 2026-07-06. "Voice space" = any existing dictation/STT product.
 
 **Recommended handle set:**
 
-- **Brand:** Blurt · **Mac app:** Blurt.app · bundle id `app.blurtvoice.menubar`
+- **Brand:** Blurt · **Mac app:** Blurt.app · bundle id `com.blurtvoice.mac`
+  (reverse-DNS of the owned domain; platform-named tail leaves room for
+  `com.blurtvoice.ios` etc.)
 - **Repo:** `lightware-dev/blurt` (open-sourced under Lightware's org; the `blurtvoice` org is owned but held spare)
 - **Server package (if ever published):** `blurtd` (npm + PyPI both free) —
   "the blurt daemon" is also just a funny sentence
