@@ -1,11 +1,12 @@
 # Blurt — brand & positioning
 
-> **Say it badly, get it typed well.**
+> **Talk faster than you type.**
 
 Local, GPU-accelerated voice dictation: press a hotkey, blurt out whatever's in
-your head, and clean text lands in the field you're already focused on. Runs
-entirely on your own hardware (Parakeet on the box, native menu-bar app on the
-Mac) — your voice never leaves the LAN.
+your head, and the transcript lands in the field you're already focused on —
+fast enough to finish before you do. Runs entirely on your own hardware
+(Parakeet on the box, native menu-bar app on the Mac) — your voice never leaves
+the LAN.
 
 ## The angle: playful, honest, self-aware
 
@@ -14,11 +15,13 @@ Every competitor in this space is named some earnest variant of **Whisper**
 WhisperTyping…) or leans on the parrot pun (OpenQuack). **Blurt stands out by
 *not* taking itself seriously.**
 
-The name owns a real tension and turns it into the whole joke: **the chaos is on
-your end; the output is clean.** You blurt — half-formed, rambling, no
-punctuation — and the tool *behaves*, handing back composed text. That honesty
-(*"say it badly"*) is more disarming and more memorable than one more promise of
-"effortless, 99% accurate AI voice."
+The name owns a real tension and turns it into the whole joke: **you talk faster
+than you type, so stop typing.** You blurt it out — messy, fast, mid-thought —
+and the tool keeps up, dropping your words into the field before you'd have
+finished reaching for the keyboard. Owning that it's *"yet another"* dictation
+app is more disarming and more memorable than one more promise of "effortless,
+99% accurate AI voice." (Blurt transcribes what you said — it doesn't rewrite or
+clean up your grammar. That's the honest version.)
 
 **Personality:** fast, personal power-tool with a wink. Confident enough to joke
 about how messy human speech is. Not enterprise, not precious.
@@ -32,12 +35,12 @@ feature — it's the reason it's memorable in a sea of earnest clones.
 
 Primary:
 
-- **Say it badly, get it typed well.**
+- **Talk faster than you type.**
 
 Alternates:
 
-- Think out loud. We'll fix the grammar.
 - For people who talk faster than they type.
+- Think out loud. It's already typed.
 - Press ⌥Space and just… let it out.
 - Your voice, your GPU, your text. Nothing leaves the room.  ← privacy-forward variant
 
@@ -108,9 +111,10 @@ for future edits:
 - **How that was executed** (the current site): a "brutalist dictation HUD" —
   near-black ink, warm bone text, one loud highlighter-yellow accent, display +
   mono type mix (Space Grotesk / JetBrains Mono / Inter). Centerpiece is
-  `components/BlurtDemo.tsx`: a live typewriter that blurts a messy, disfluent
-  sentence then snaps it to clean text — the "say it badly, get it typed well"
-  promise made visual. Struck-through Whisper-clone list + naming wink own the
+  `components/BlurtDemo.tsx`: a live typewriter that streams a sentence into the
+  HUD as partials, then pastes that exact transcript at the cursor — what's in
+  the HUD is what gets typed, no rewrite step, the "talk faster than you type"
+  pitch made visual. Struck-through Whisper-clone list + naming wink own the
   crowded-field angle. Tone is self-aware, anti-corporate ("not a startup, not
   hiring, not raising").
 

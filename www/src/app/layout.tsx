@@ -22,7 +22,7 @@ const jetbrains = JetBrains_Mono({
 
 const title = 'Blurt — yet another voice dictation app'
 const description =
-    'The world did not need another voice-to-text app. We made one anyway. Blurt runs on your own GPU, never phones home, and types what you meant — not what you mumbled. Say it badly, get it typed well.'
+    'The world did not need another voice-to-text app. We made one anyway. Blurt runs on your own GPU, never phones home, and types what you said before you finish saying it. Talk faster than you type.'
 
 export const metadata: Metadata = {
     title,

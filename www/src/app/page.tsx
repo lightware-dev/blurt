@@ -120,9 +120,9 @@ export default function Home() {
                 <p className="mt-6 max-w-xl text-lg leading-relaxed text-bone/80">
                     The category is <em className="not-italic text-bone">aggressively</em> crowded — it’s
                     mostly the word “Whisper” with the vowels moved around. Blurt is the
-                    one that runs on <span className="mark font-medium">your</span> GPU and types
-                    what you <em className="not-italic text-bone">meant</em>, not what you{' '}
-                    <em className="not-italic text-bone">mumbled</em>.
+                    one that runs on <span className="mark font-medium">your</span> GPU, never
+                    phones home, and types what you said before you’re{' '}
+                    <em className="not-italic text-bone">done saying it</em>.
                 </p>
 
                 <div className="mt-9 flex flex-wrap items-center gap-4">
@@ -150,7 +150,7 @@ export default function Home() {
                     <p className="mt-3 text-center font-mono text-xs text-bone-dim">
                         tap <KeyCap>⌥</KeyCap>
                         <KeyCap>⌥</KeyCap>, ramble, tap again to finish (<KeyCap>Esc</KeyCap> to
-                        cancel). clean text where your cursor is.
+                        cancel). final text lands where your cursor is.
                     </p>
                 </div>
             </section>
@@ -367,9 +367,9 @@ export default function Home() {
             {/* ── final CTA ───────────────────────────────────────── */}
             <section className="mx-auto max-w-5xl px-6 py-24 text-center">
                 <h2 className="mx-auto max-w-2xl font-display text-4xl font-bold leading-tight tracking-tight sm:text-6xl">
-                    Say it badly.
+                    Talk faster
                     <br />
-                    Get it typed <span className="mark">well</span>.
+                    than you <span className="mark">type</span>.
                 </h2>
                 <div className="mt-10 flex flex-wrap justify-center gap-4">
                     <a

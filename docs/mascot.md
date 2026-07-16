@@ -16,9 +16,9 @@ drawn, and the design decisions behind it.
 blinking, *bored out of its mind*, waiting for you to say something — and the instant
 you actually blurt, it can't type fast enough and scrambles to keep up.
 
-That tension **is** the character, and it's on-brand: the site already jokes that Blurt
-"types what you meant, not what you mumbled." Blip is that joke drawn as a face — eager,
-impatient, a little overwhelmed, honest about the letters it dropped.
+That tension **is** the character, and it's on-brand: the whole pitch is that you
+talk faster than you type. Blip is that joke drawn as a face — eager, impatient, a
+little overwhelmed, racing to keep your words on the line as fast as you blurt them.
 
 ---
 

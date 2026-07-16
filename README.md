@@ -1,9 +1,12 @@
 <img src="clients/mac/AppIcon.svg" width="28" align="top" alt=""> Blurt
 ======
 
-**Say it badly, get it typed well.** A high-performance, fully-local speech-to-text
-dictation system — you talk faster than you type, so just let it out and Blurt
-cleans it up into the field you're already in. Your voice never leaves your LAN.
+**[blurtvoice.com](https://blurtvoice.com)**
+
+**Talk faster than you type.** A high-performance, fully-local speech-to-text
+dictation system — hold a hotkey, say your piece, and the transcript lands in
+whatever field you're already in, fast enough to finish before you do. Your
+voice never leaves your LAN.
 
 Two parts:
 
