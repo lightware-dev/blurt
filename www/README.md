@@ -36,5 +36,5 @@ than pretending to be revolutionary. Copy voice + rationale live in
 ## TODO before launch
 
 - The `GITHUB` constant in `src/app/page.tsx` points at
-  `github.com/blurtvoice/blurt` — confirm the repo is pushed there.
+  `github.com/lightware-dev/blurt` — confirm the repo is pushed there.
 - Add an `og-image.png` (1200×630) for social cards.

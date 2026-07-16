@@ -1,6 +1,6 @@
 import BlurtDemo from './components/BlurtDemo'
 
-const GITHUB = 'https://github.com/blurtvoice/blurt'
+const GITHUB = 'https://github.com/lightware-dev/blurt'
 
 // The real, crowded field. We are, technically, competing with all of these.
 const RIVALS = [
