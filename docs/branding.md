@@ -86,56 +86,22 @@ blinking inside it. Reads as "words coming out, being turned into text," and
 reduces cleanly to a monochrome menu-bar glyph. Current placeholder uses the
 system `mic` / `mic.fill` SF Symbol (red when recording).
 
-## Name & slug availability
-
-Checked 2026-07-06. "Voice space" = any existing dictation/STT product.
-
-| Slug | Status | Notes |
-|---|---|---|
-| **Brand "Blurt"** | ✅ clear in voice space | no dictation/STT product uses it |
-| `github.com/lightware-dev/blurt` (repo) | ✅ | open-sourced under Lightware's org (built-by-Lightware framing) |
-| `github.com/blurtvoice` (org) | ✅ OWNED | grabbed; held as a spare product-brand handle |
-| `github.com/blurt` (org) | ⚠️ taken | unrelated |
-| npm `blurt` | ⚠️ taken | dead fire-and-forget messaging lib, last publish 2017 — unrelated |
-| npm **`blurtd`** | ✅ FREE | ideal for the server/daemon package |
-| PyPI `blurt` / `blurtd` | ✅ FREE | both open |
-| **`blurtvoice.com`** | ✅ REGISTERED | **primary domain (owned)** |
-| `blurtvoice.app` | ✅ FREE | good secondary |
-| `blurtdictation.com` | ✅ FREE | descriptive fallback |
-| `blurt.app` | ⚠️ taken | |
-| `blurt.io` / `blurt.sh` | ⚠️ taken | |
-| `getblurt.com` / `blurtapp.com` | ⚠️ taken | |
-
-**Recommended handle set:**
+## Names & identifiers
 
 - **Brand:** Blurt · **Mac app:** Blurt.app · bundle id `com.blurtvoice.mac`
-  (reverse-DNS of the owned domain; platform-named tail leaves room for
-  `com.blurtvoice.ios` etc.)
-- **Repo:** `lightware-dev/blurt` (open-sourced under Lightware's org; the `blurtvoice` org is owned but held spare)
-- **Server package (if ever published):** `blurtd` (npm + PyPI both free) —
-  "the blurt daemon" is also just a funny sentence
-- **Domain:** **blurtvoice.com** (primary, registered), blurtvoice.app /
-  blurtdictation.com (available as secondary)
-
-### For reference — the shortlist Blurt beat
-
-| Name | Verdict |
-|---|---|
-| **Trill** | strong runner-up; bird/Parakeet nod, `trillvoice.app` free |
-| Loqui | polished but abstract; premium domains taken |
-| Parley | softer fit ("negotiation"); domains tight |
-| Sotto | ❌ npm `sotto` is a *live* "voice input for Claude Code" (2026) |
-| Utter | ❌ homophone of Otter.ai; handles taken |
+  (platform-named tail leaves room for `com.blurtvoice.ios` etc.)
+- **Repo:** `lightware-dev/blurt`
+- **Daemon / server:** `blurtd` — "the blurt daemon" is also just a funny sentence
+- **Site:** blurtvoice.com
 
 ## Website (`www/`)
 
 The original brief that produced the marketing site — keep it as the north star
 for future edits:
 
-- **Stack:** Next.js (App Router) + Tailwind, deployed to Cloudflare. Mirror
-  `../chronicle/www` exactly (Next 16 + Tailwind v4 + OpenNext → Cloudflare
-  Workers; `opennextjs-cloudflare build && deploy`). Worker name `blurt`; target
-  domain `blurtvoice.com`.
+- **Stack:** Next.js (App Router, Next 16) + Tailwind v4, built with OpenNext and
+  deployed to Cloudflare Workers (`opennextjs-cloudflare build && deploy`). Worker
+  name `blurt`; target domain `blurtvoice.com`.
 - **Design brief:** fun and witty. **Draw on how crowded the space already is —
   lean into "yet another" dictation app.** Creative, unusual, deliberately *not*
   another AI-generated slop page that looks like every other site.

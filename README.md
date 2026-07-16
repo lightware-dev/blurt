@@ -166,3 +166,15 @@ audio/             sample wavs
 Dockerfile         GPU container for blurtd (torch cu130 + NeMo)
 docker-compose.yml one-command run with GPU + model-cache volume
 ```
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE) — see `LICENSE` for the
+full text and `NOTICE` for attribution. © 2026 Lightware Consulting, Lda. Blurt
+builds on third-party models and libraries (Parakeet/NeMo, Silero VAD, PyTorch,
+FastAPI, Next.js) under their own licenses; see `NOTICE`.
+
+The **Blurt** name, logo, and mascot are trademarks of Lightware Consulting, Lda
+and are **not** licensed under Apache 2.0. You may build on and redistribute the
+code, but not use the Blurt branding to imply endorsement by or affiliation with
+Lightware.

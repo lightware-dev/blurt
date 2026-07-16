@@ -1,0 +1,23 @@
+Blurt
+Copyright 2026 Lightware Consulting, Lda
+
+This product includes software developed at Lightware (https://lightware.dev).
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file for the
+full license text.
+
+---
+
+Blurt builds on third-party components distributed under their own licenses,
+including but not limited to:
+
+  * NVIDIA NeMo and the Parakeet (parakeet-tdt-0.6b-v3) speech-recognition
+    model — NVIDIA.
+  * Silero VAD — Silero Team.
+  * PyTorch — the PyTorch contributors.
+  * FastAPI, Uvicorn, and the wider Python ecosystem.
+  * Next.js, React, and Tailwind CSS (marketing site under www/).
+
+These components are not covered by the Apache License above; each is licensed
+by its respective authors under its own terms. Consult each project for
+details.
