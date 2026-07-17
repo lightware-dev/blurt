@@ -183,8 +183,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
     /// triggers — otherwise the active hotkey would swallow the combo being typed.
     var onCaptureActive: ((Bool) -> Void)?
 
-    private let outerW: CGFloat = 504     // content column width (matches onboarding)
-    private let cardInnerW: CGFloat = 464 // width inside a card (outerW − 2×20)
+    private let colW: CGFloat = 300       // width of one card column
+    private let colGap: CGFloat = 16      // gap between the two columns
+    private var outerW: CGFloat { colW * 2 + colGap } // full content width
+    private var cardInnerW: CGFloat { colW - 40 }     // width inside a card (colW − 2×20)
 
     private var radios: [Settings.ShortcutMode: NSButton] = [:]
     private var injectRadios: [String: NSButton] = [:]
@@ -298,8 +300,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
             body: "How the finished text lands in the focused field.",
             rows: insertViews)
 
-        // ── assemble ──────────────────────────────────────────
-        let stack = NSStackView(views: [brand, title, subtitle, shortcutCard, serverCard, insertCard])
+        // ── assemble: card 01 on the left, 02 + 03 stacked on the right ──
+        let rightCol = NSStackView(views: [serverCard, insertCard])
+        rightCol.orientation = .vertical
+        rightCol.alignment = .leading
+        rightCol.spacing = 16
+
+        let columns = NSStackView(views: [shortcutCard, rightCol])
+        columns.orientation = .horizontal
+        columns.alignment = .top
+        columns.spacing = colGap
+
+        let stack = NSStackView(views: [brand, title, subtitle, columns])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 16
@@ -314,9 +326,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
             stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -pad),
             stack.topAnchor.constraint(equalTo: content.topAnchor, constant: pad),
             stack.widthAnchor.constraint(equalToConstant: outerW),
-            shortcutCard.widthAnchor.constraint(equalToConstant: outerW),
-            serverCard.widthAnchor.constraint(equalToConstant: outerW),
-            insertCard.widthAnchor.constraint(equalToConstant: outerW),
+            shortcutCard.widthAnchor.constraint(equalToConstant: colW),
+            serverCard.widthAnchor.constraint(equalToConstant: colW),
+            insertCard.widthAnchor.constraint(equalToConstant: colW),
         ])
 
         field.onBegin = { [weak self] in self?.onCaptureActive?(true) }
