@@ -8,22 +8,67 @@ dictation system — hold a hotkey, say your piece, and the transcript lands in
 whatever field you're already in, fast enough to finish before you do. Your
 voice never leaves your LAN.
 
-Two parts:
+Three parts:
 
 - **`server/`** — a lean NVIDIA **Parakeet** streaming ASR server (Python + NeMo)
-  that runs on this Linux box's RTX 5090. Modest VRAM (~2.3 GB, bf16), low WER,
-  near-realtime live partials over a WebSocket.
+  that runs on any modern NVIDIA GPU (developed on an RTX 5090). Modest VRAM
+  (~2.3 GB, bf16), low WER, near-realtime live partials over a WebSocket.
 - **`clients/mac/`** — a native **macOS menu-bar app** (Swift, universal
   arm64 + x86_64). A global hotkey toggles dictation; live text shows in a HUD;
   the final transcript is typed into whatever field has focus.
+- **`clients/windows/`** — a native **Windows tray app** (.NET 8 / WPF). The
+  twin of the Mac client: same hotkey-to-dictate flow, same server protocol, a
+  live HUD with audio waveform, and text injected into the focused field.
 
 ```
  mic ─▶ AVAudioEngine (16 kHz PCM16) ─▶ WebSocket ─▶ Parakeet server (5090)
                                                         │  Silero VAD → segment
- ⌥Space toggles ◀── HUD partials / final text ◀────────┘  re-decode every ~350ms
+ double-tap ⌥ toggles ◀── HUD partials / final text ◀──┘  re-decode every ~350ms
         │
         └▶ inject final text into the focused field (paste, or type)
 ```
+
+## Quick start
+
+Blurt runs across **two machines on the same LAN**: the **server** on your
+NVIDIA GPU box, and a **client** on the Mac or Windows machine you dictate from.
+(They can be the same machine if it has the GPU — the client just points at
+`localhost`.)
+
+**1 — Start the server** on the GPU box (Linux + NVIDIA GPU). With Docker
+(TLS and model download are automatic — see [**Docker**](#docker)):
+
+```bash
+docker build -t blurtd .
+docker run --gpus all -p 25878:25878 -v blurt-cache:/root/.cache blurtd
+```
+
+or from source:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt           # torch must match your CUDA (5090 → cu130)
+./scripts/gen_certs.sh                     # self-signed TLS so browsers/clients get wss://
+./blurtd                                   # serves wss://<this-box-ip>:25878/ws
+```
+
+The first start downloads the model (~0.6 B params) and caches it; later starts
+are fast. Verify it's up by opening `https://<gpu-box-ip>:25878/` in a browser —
+you'll get a mic test page. Details, config, and GPU support: [**Server**](#server--blurtd-linux--gpu).
+
+**2 — Install a client** on your everyday machine and point it at the server:
+
+- **macOS** — download `Blurt-macOS.zip`, set the server URL to
+  `wss://<gpu-box-ip>:25878/ws`, grant Microphone + Accessibility. See
+  [**Mac client**](#mac-client).
+- **Windows** — download `Blurt-Windows.zip`, set the same URL. See
+  [**Windows client**](#windows-client).
+
+**3 — Dictate.** Press the hotkey (**double-tap ⌥** on Mac, **double-tap Ctrl**
+on Windows), speak, release — the transcript types into whatever field has focus.
+
+No GPU box yet? You can still exercise the server end-to-end from any machine
+with [`scripts/ws_client_test.py`](#validate-without-a-client).
 
 ## Why this design
 
@@ -54,17 +99,23 @@ pip install -r requirements.txt          # torch must match your CUDA (5090 → 
 ```
 
 The model is fixed at **`parakeet-tdt-0.6b-v3`**, run in bf16 on the GPU. On first
-start it converts the published fp32 checkpoint to bf16 and caches it under
-`~/.cache/blurt/`; every start after loads that bf16 file straight onto the GPU.
-Pre-build the cache without starting the server with `python scripts/build_bf16_ckpt.py`.
+start it downloads a **pre-built bf16 checkpoint** from HuggingFace
+(`lightware-dev/parakeet-tdt-0.6b-v3-bf16`, override with `PARAKEET_BF16_REPO`) into
+`~/.cache/blurt/`; every start after loads that bf16 file straight onto the GPU — no
+fp32 copy is ever fetched or materialised. If no cache and no download are available,
+it fails fast rather than falling back to the fp32 checkpoint. Pre-build the cache
+offline with `python scripts/build_bf16_ckpt.py`.
 
-Serves `wss://<ip>:25878/ws` when `certs/cert.pem` + `certs/key.pem` exist (they do),
-otherwise plain `ws://`. Open `https://<ip>:25878/` for a **browser mic test page**.
+Serves `wss://<ip>:25878/ws` when `certs/cert.pem` + `certs/key.pem` exist,
+otherwise plain `ws://`. The `certs/` dir is git-ignored and generated per
+machine — run `scripts/gen_certs.sh` to mint a self-signed pair for your LAN
+(browsers require TLS for mic access; the Mac and Windows clients trust it after
+a one-time prompt). Open `https://<ip>:25878/` for a **browser mic test page**.
 The default port **`25878`** is a mnemonic — `2-5-8-7-8` spells **BLURT** on a phone
 keypad (B→2, L→5, U→8, R→7, T→8). Override it with `--port` or `PORT`.
 
-Config (env or `.env`, all optional): `PARAKEET_BF16_CKPT`, `HOST`, `PORT`,
-`AUTH_TOKEN`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
+Config (env or `.env`, all optional): `PARAKEET_BF16_CKPT`, `PARAKEET_BF16_REPO`,
+`HOST`, `PORT`, `AUTH_TOKEN`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
 `LOG_STATS`. See `.env.example`. `LOG_STATS` (default on) logs per-dictation
 metadata — packet count, bytes, audio duration, segments — never transcript text;
 set `LOG_STATS=0` to silence it.
@@ -119,7 +170,7 @@ Client → server: `{"type":"start"}`, then binary 16 kHz mono PCM16 frames, the
 `{"type":"stop"}`. Server → client: `{"type":"partial","text":…}` (live),
 `{"type":"final","text":…}` (on stop), `{"type":"status",…}`.
 
-### Validate without the Mac
+### Validate without a client
 
 ```bash
 python scripts/ws_client_test.py audio/clean.wav    # streams a wav, prints partials + final
@@ -155,18 +206,51 @@ open Blurt.app
 
 Set the server URL from the menu-bar icon (▸ *Set Server URL…* →
 `wss://<linux-ip>:25878/ws`), grant **Microphone** and **Accessibility** when
-prompted, then press **⌥Space** to dictate. See `clients/mac/README.md` for details
+prompted, then **double-tap ⌥** to dictate (or pick ⌥Space / a custom chord in
+Settings). See `clients/mac/README.md` for details
 (including notarized distribution).
+
+## Windows client
+
+A native .NET 8 / WPF tray app — the Windows twin of the Mac client, same server
+protocol and behaviour. Grab the latest signed build from the
+[**Releases page**](https://github.com/lightware-dev/blurt/releases/latest), or the
+stable URL:
+
+```
+https://github.com/lightware-dev/blurt/releases/latest/download/Blurt-Windows.zip
+```
+
+Build from source (needs the .NET 8 SDK):
+
+```bash
+cd clients/windows
+dotnet publish -c Release      # → publish/Blurt.exe
+```
+
+On first run, point Blurt at your server URL, pick a hotkey (default: double-tap
+Ctrl), and dictate. Unlike macOS, Windows needs no Accessibility permission for
+text injection. See `clients/windows/README.md` for details.
+
+## Contributing
+
+Issues and pull requests are welcome at
+[github.com/lightware-dev/blurt](https://github.com/lightware-dev/blurt) — bug
+reports, GPU-compatibility data points, and client polish especially. The three
+parts build independently: `server/` (Python), `clients/mac/` (Swift), and
+`clients/windows/` (.NET). See `AGENTS.md` for repo conventions.
 
 ## Files
 
 ```
 server/            Parakeet streaming server (asr, vad, app, models, __main__)
 clients/mac/       Swift menu-bar app + build-app.sh + notarize.sh
+clients/windows/   .NET 8 / WPF tray app + Blurt.csproj
+www/               marketing site (Next.js) for blurtvoice.com
 static/            browser mic test page (index.html, pcm-worklet.js)
-scripts/           verify_asr.py, ws_client_test.py, generate_samples.py
-certs/             self-signed TLS for wss:// on the LAN
+scripts/           verify_asr.py, ws_client_test.py, generate_samples.py, gen_certs.sh
 audio/             sample wavs
+certs/             self-signed TLS for wss:// (git-ignored; run scripts/gen_certs.sh)
 Dockerfile         GPU container for blurtd (torch cu130 + NeMo)
 docker-compose.yml one-command run with GPU + model-cache volume
 ```

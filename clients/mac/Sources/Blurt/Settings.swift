@@ -1,7 +1,7 @@
 import Foundation
 import Carbon
 
-/// Persisted config, backed by UserDefaults. Hotkey defaults to ⌥Space.
+/// Persisted config, backed by UserDefaults. Hotkey defaults to double-tap ⌥.
 enum Settings {
     private static let d = UserDefaults.standard
 

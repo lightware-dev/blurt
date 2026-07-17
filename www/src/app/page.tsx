@@ -410,7 +410,7 @@ export default function Home() {
                         <a href={GITHUB} className="hover:text-bone">
                             github
                         </a>
-                        <a href={`${GITHUB}#server-linux--gpu`} className="hover:text-bone">
+                        <a href={`${GITHUB}#server--blurtd-linux--gpu`} className="hover:text-bone">
                             server
                         </a>
                         <a href={`${GITHUB}/tree/main/clients/mac`} className="hover:text-bone">

@@ -96,8 +96,9 @@ the `.p8`).
 
 ## Use
 
-- Press **⌥Space** (Option-Space) to start; a HUD shows live partials as you speak.
-- Press **⌥Space** again to stop — the final text is inserted at the cursor.
+- **Double-tap ⌥** (Option twice, the default) to start; a HUD shows live partials
+  as you speak. Double-tap again to stop — the final text is inserted at the cursor.
+- Prefer a held chord? Pick **⌥Space** or a custom shortcut in **Settings…**.
 - Menu options: **Set Server URL**, **Set Auth Token**, **Insert via Typing (not
   Paste)**, **Quit**.
 
@@ -117,9 +118,9 @@ differ if the mouse and the focused field are on different displays.
 
 ## Notes / customization
 
-- **Hotkey** defaults to ⌥Space (`Settings.hotKeyCode` / `hotKeyMods`, persisted in
-  UserDefaults). To change it, adjust those values (Carbon key code + modifier
-  mask) — a preferences picker is an easy future addition.
+- **Hotkey** defaults to **double-tap ⌥** (`Settings.shortcutMode = .doubleTap`).
+  Alternatives — ⌥Space or a custom Carbon chord (`hotKeyCode` / `hotKeyMods`) —
+  are selectable in **Settings…**; all persist in UserDefaults.
 - **Self-signed cert:** the client trusts the server's TLS cert (LAN use). For a
   properly-signed cert, remove the trust-all block in `DictationClient.swift`.
 - **Architecture:** `HotKey` (Carbon global hotkey) · `AudioCapture`
