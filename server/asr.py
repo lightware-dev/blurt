@@ -6,10 +6,13 @@ Design goals: minimal VRAM (bf16, ~1.3 GB), low WER (full-context decode of
 each speech segment), and no per-call disk I/O (we feed numpy arrays straight to
 the model instead of writing a temp wav every tick like a naive prototype).
 
-On first GPU run we convert the published fp32 checkpoint to bf16 and cache it as
-a .nemo (see bf16_ckpt_path); every subsequent start restores that bf16 file
-directly onto the GPU, which loads faster (~13 s vs ~22 s) and never materialises
-an fp32 copy. Pre-build it without starting the server via scripts/build_bf16_ckpt.py.
+We load a bf16 .nemo (see bf16_ckpt_path) directly onto the GPU in ~13 s, never
+materialising an fp32 copy. The checkpoint comes from, in order:
+  1. a local cache file (from a prior run or scripts/build_bf16_ckpt.py),
+  2. else a direct download of the pre-built bf16 .nemo we publish on HF (BF16_REPO).
+If neither is available, load() raises — the server does not fall back to fetching
+and converting the upstream fp32 checkpoint. Pre-build a local one offline with
+scripts/build_bf16_ckpt.py.
 """
 
 from __future__ import annotations
@@ -35,6 +38,12 @@ if not hasattr(np, "sctypes"):
 
 # The one model we support: multilingual 0.6B TDT, run in bf16 on the GPU.
 MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
+
+# Pre-built bf16 .nemo we publish so first run downloads it directly instead of
+# pulling the ~2.4 GB fp32 checkpoint and casting it (saves the one-off convert and
+# the fp32 RAM transient). Override with PARAKEET_BF16_REPO to host your own.
+BF16_REPO = os.getenv("PARAKEET_BF16_REPO") or "lightware-dev/parakeet-tdt-0.6b-v3-bf16"
+BF16_FILE = "parakeet-tdt-0.6b-v3-bf16.nemo"
 
 
 class ParakeetASR:
@@ -70,33 +79,29 @@ class ParakeetASR:
                 "Blurt only supports parakeet-tdt-0.6b-v3 in bf16 on a CUDA GPU; "
                 "no bf16-capable CUDA device was found.")
         ckpt = self.bf16_ckpt_path()
+        if not os.path.exists(ckpt):
+            ckpt = self._download_bf16_ckpt() or ""
+        if not ckpt or not os.path.exists(ckpt):
+            raise RuntimeError(
+                f"No bf16 checkpoint available: neither a local cache "
+                f"({self.bf16_ckpt_path()}) nor a download from {BF16_REPO} succeeded. "
+                "Check the network / HF_TOKEN, or pre-build one with "
+                "scripts/build_bf16_ckpt.py.")
 
-        if os.path.exists(ckpt):
-            # Fast path: the bf16 checkpoint loads straight onto the GPU with no fp32
-            # ever materialising. set_default_dtype makes NeMo build the params bf16
-            # directly (peak ~1.3 GB, vs a ~2.5 GB fp32 transient if restored as fp32
-            # then cast); the following to(bfloat16) also converts preprocessor buffers
-            # so the featurizer's output dtype matches the bf16 convs (else the mel
-            # features come out fp32 and the first conv raises a dtype mismatch).
-            print(f"[asr] loading bf16 checkpoint {ckpt} ...", flush=True)
-            torch.set_default_dtype(torch.bfloat16)
-            try:
-                model = nemo_asr.models.ASRModel.restore_from(ckpt, map_location="cuda")
-            finally:
-                torch.set_default_dtype(torch.float32)
-            model.eval()
-            model.to(torch.bfloat16)
-        else:
-            # First run: pull the published fp32 checkpoint onto CPU, cast to bf16, cache
-            # it for next time, then move to CUDA. Loading on CPU (not straight to the
-            # GPU) keeps from_pretrained's transient ~2.4 GB fp32 copy in RAM instead of
-            # VRAM; only the final bf16 weights reach the GPU.
-            print(f"[asr] loading {self.model_name} (first run — building bf16 cache) ...", flush=True)
-            model = nemo_asr.models.ASRModel.from_pretrained(self.model_name, map_location="cpu")
-            model.eval()
-            model.to(torch.bfloat16)
-            self._save_bf16_ckpt(model, ckpt)
-            model.to("cuda")
+        # The bf16 checkpoint loads straight onto the GPU with no fp32 ever
+        # materialising. set_default_dtype makes NeMo build the params bf16 directly
+        # (peak ~1.3 GB, vs a ~2.5 GB fp32 transient if restored as fp32 then cast);
+        # the following to(bfloat16) also converts preprocessor buffers so the
+        # featurizer's output dtype matches the bf16 convs (else the mel features come
+        # out fp32 and the first conv raises a dtype mismatch).
+        print(f"[asr] loading bf16 checkpoint {ckpt} ...", flush=True)
+        torch.set_default_dtype(torch.bfloat16)
+        try:
+            model = nemo_asr.models.ASRModel.restore_from(ckpt, map_location="cuda")
+        finally:
+            torch.set_default_dtype(torch.float32)
+        model.eval()
+        model.to(torch.bfloat16)
 
         self.dtype = next(model.parameters()).dtype
         _disable_cuda_graph_decoder(model)
@@ -105,6 +110,28 @@ class ParakeetASR:
         _quiet_nemo_transcribe_warning()
         print(f"[asr] ready in {time.time()-t0:.1f}s (dtype={self.dtype})", flush=True)
         return model
+
+    @staticmethod
+    def _download_bf16_ckpt():
+        """Best-effort fetch of the pre-built bf16 .nemo from HF (BF16_REPO).
+
+        Returns a local path to the checkpoint, or None on any failure (missing repo,
+        no network, private repo without auth); load() raises if it gets None and has no
+        local cache. The file is served from huggingface_hub's own cache, so later starts
+        return it without re-downloading; set HF_TOKEN to access a private mirror.
+        """
+        try:
+            from huggingface_hub import hf_hub_download
+        except Exception:
+            return None
+        try:
+            print(f"[asr] fetching pre-built bf16 checkpoint {BF16_REPO}/{BF16_FILE} ...", flush=True)
+            path = hf_hub_download(BF16_REPO, BF16_FILE)
+            print(f"[asr] downloaded bf16 checkpoint -> {path}", flush=True)
+            return path
+        except Exception as e:  # load() turns a None into a clear no-checkpoint error
+            print(f"[asr] warn: could not fetch bf16 checkpoint ({e})", flush=True)
+            return None
 
     @staticmethod
     def _save_bf16_ckpt(model, ckpt: str):
