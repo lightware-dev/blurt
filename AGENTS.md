@@ -9,3 +9,7 @@ Guidance for AI agents (and humans) working in this repo.
   `BRANDING.md` or `DEPLOY_NOTES.md`.
 - Exception: the conventional root files keep their standard casing —
   `README.md`, `LICENSE`, `AGENTS.md`.
+
+## Commits
+
+- **Never add a `Co-Authored-By` trailer** to commit messages for AI assistants.
