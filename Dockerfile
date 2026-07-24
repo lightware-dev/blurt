@@ -77,7 +77,16 @@ ENV MALLOC_ARENA_MAX=2 \
     NUMEXPR_NUM_THREADS=2 \
     NUMBA_NUM_THREADS=2
 
-EXPOSE 25878
+# 25878: native WebSocket protocol (wss) + the OpenAI-compatible /v1 API.
+# 10300: Wyoming (Home Assistant STT).
+#
+# EXPOSE is documentation only — it neither opens a port nor publishes one, and
+# `-p` works regardless of what's listed here. So declaring 10300 costs nothing:
+# the listener is still off unless WYOMING_PORT says otherwise, and reaching it
+# from the host still needs an explicit `-p 10300:10300`. Both gates stay shut
+# by default; this just means `docker inspect` and `docker run -P` know the port
+# exists.
+EXPOSE 25878 10300
 
 # The entrypoint mints a TLS cert if needed, then runs `python -m server`.
 # Append daemon flags as CMD, e.g.  docker run ... blurtd --port 8000

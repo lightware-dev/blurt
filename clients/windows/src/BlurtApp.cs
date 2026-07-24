@@ -38,6 +38,13 @@ internal sealed class BlurtApp : IDisposable
     // recovered from the menu when it landed somewhere unexpected. Never persisted.
     private string? _lastDictation;
 
+    // Live protocol state for the HUD: the latest structured partial, whether the
+    // server's VAD currently hears speech, and whether the model is still loading.
+    private string _partialCommitted = "";
+    private string _partialLive = "";
+    private bool _serverHearing;
+    private bool _serverLoading;
+
     public BlurtApp(Application app)
     {
         _app = app;
@@ -123,10 +130,33 @@ internal sealed class BlurtApp : IDisposable
 
         // Skip a partial that arrives after teardown has begun — it would resurrect
         // the HUD after a "Cancelled" flash (matches the Swift `closing` guard).
-        _client.OnPartial = text => _ui.Invoke(() =>
+        _client.OnPartial = (committed, live) => _ui.Invoke(() =>
         {
             if (_client.Closing) return;
-            _hud.Show(text);
+            _partialCommitted = committed;
+            _partialLive = live;
+            _serverLoading = false;   // text proves the model is up
+            RenderHud();
+        });
+        // Server-side VAD: before any text arrives, flip the placeholder to
+        // "Hearing you…" — end-to-end confirmation that mic → network → server
+        // is alive (the waveform only proves the local mic works).
+        _client.OnVad = speech => _ui.Invoke(() =>
+        {
+            if (_client.Closing) return;
+            _serverHearing = speech;
+            // `info` is a one-shot snapshot taken at connect; if it said
+            // "loading", nothing else would ever clear it and the placeholder
+            // would outrank "Hearing you…" for the whole dictation. Any event
+            // from the pipeline proves loading is done.
+            _serverLoading = false;
+            RenderHud();
+        });
+        _client.OnInfo = (state, _) => _ui.Invoke(() =>
+        {
+            if (_client.Closing) return;
+            _serverLoading = state == "loading";
+            RenderHud();
         });
         _client.OnFinal = text => _ui.Invoke(() =>
         {
@@ -197,6 +227,17 @@ internal sealed class BlurtApp : IDisposable
                 : $"Start / Stop Blurting  ({label})";
     }
 
+    /// One render path for the live HUD: structured partial when there's text,
+    /// otherwise a placeholder that reflects what the server is actually doing.
+    private void RenderHud()
+    {
+        if (!_recording) return;
+        var placeholder = _serverLoading ? "Loading model…"
+                        : _serverHearing ? "Hearing you…"
+                        : "Listening…";
+        _hud.Show(_partialCommitted, _partialLive, placeholder);
+    }
+
     // MARK: dictation state machine
 
     private void Toggle()
@@ -208,6 +249,10 @@ internal sealed class BlurtApp : IDisposable
     private void StartRecording()
     {
         if (_recording) return;
+        _partialCommitted = "";
+        _partialLive = "";
+        _serverHearing = false;
+        _serverLoading = false;
         _client.ConnectAndStart();
         try
         {

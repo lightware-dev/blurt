@@ -166,9 +166,35 @@ a "no kernel image" error. VRAM is a non-issue: the models are ~0.5–2.5 GB.
 
 ### WebSocket protocol
 
-Client → server: `{"type":"start"}`, then binary 16 kHz mono PCM16 frames, then
-`{"type":"stop"}`. Server → client: `{"type":"partial","text":…}` (live),
-`{"type":"final","text":…}` (on stop), `{"type":"status",…}`.
+Client → server: `{"type":"start","id":…,"audio":{…}}`, then binary PCM frames
+(16 kHz mono PCM16 by default — other rates/stereo are declared and converted),
+then `{"type":"stop","id":…}`. Server → client: `{"type":"info",…}` on connect,
+`{"type":"vad","speech":…}` (server-side voice activity),
+`{"type":"partial","committed":…,"live":…,"text":…}` (live transcript —
+committed segments are stable, the live tail may still be revised),
+`{"type":"final","text":…}` (on stop), `{"type":"status",…}`. Full reference,
+message-by-message: [**docs/protocol.md**](docs/protocol.md).
+
+### OpenAI-compatible API
+
+The same port also serves `POST /v1/audio/transcriptions` (and `GET
+/v1/models`), so OpenAI SDKs and tools can transcribe files against Blurt by
+pointing `base_url` at `https://<gpu-box-ip>:25878/v1` — `json`, `text`, `srt`,
+`vtt`, `verbose_json`, and SSE streaming are all supported; compressed formats
+(mp3/m4a/webm/…) decode via ffmpeg. With `AUTH_TOKEN` set, pass it as the API
+key. Details in [docs/protocol.md](docs/protocol.md#openai-compatible-api).
+
+### Home Assistant (Wyoming)
+
+`blurtd` can also speak the [Wyoming protocol](https://github.com/OHF-Voice/wyoming),
+so it plugs straight into Home Assistant as a speech-to-text engine. It's **off
+by default** — Wyoming has no auth and no TLS, so an open port there would
+bypass `AUTH_TOKEN` entirely. Opt in with `WYOMING_PORT=10300` (or
+`./blurtd --wyoming-port 10300`), then in Home Assistant: *Settings → Devices &
+Services → Add Integration → Wyoming Protocol*, host = your GPU box, port =
+`10300`. Streaming transcription is supported. Bind it narrowly with
+`WYOMING_HOST` if you don't want it on every interface. Details in
+[docs/protocol.md](docs/protocol.md#wyoming-listener).
 
 ### Validate without a client
 

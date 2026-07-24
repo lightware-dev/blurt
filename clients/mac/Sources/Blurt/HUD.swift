@@ -39,20 +39,54 @@ final class HUD {
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
     }
 
-    func show(_ text: String) {
+    func show(_ text: String) { show(committed: text, live: "") }
+
+    /// Render a structured partial: the live segment at full strength, settled
+    /// text receding behind it (see styledPartial). With no text yet,
+    /// `placeholder` is shown faded ("Listening…", or "Hearing you…" once the
+    /// server's VAD confirms speech).
+    func show(committed: String, live: String, placeholder: String = "Listening…") {
         DispatchQueue.main.async {
             self.generation += 1
             if self.window == nil { self.build() }
-            let isPlaceholder = text.isEmpty
-            self.label.stringValue = isPlaceholder ? "Listening…" : text
-            self.label.font = isPlaceholder ? Brand.mono(17) : Brand.mono(18, .medium)
-            self.label.textColor = isPlaceholder ? Brand.boneDim : Brand.bone
+            if committed.isEmpty && live.isEmpty {
+                self.label.stringValue = placeholder
+                self.label.font = Brand.mono(17)
+                self.label.textColor = Brand.boneDim
+            } else {
+                self.label.attributedStringValue = Self.styledPartial(committed: committed, live: live)
+            }
             self.wave.isHidden = false
             self.labelAtLeading?.isActive = false
             self.labelAfterWave?.isActive = true
             self.position()
             self.window?.orderFrontRegardless()
         }
+    }
+
+    /// The live segment — the words being spoken right now — is what the user
+    /// is actually reading, so it keeps the full-strength treatment the HUD has
+    /// always used. Settled text behind it recedes to regular weight. Doing it
+    /// the other way round would dim the whole pill for a typical dictation,
+    /// since text only becomes "committed" after a pause.
+    /// Keeps head-truncation so the newest words stay visible.
+    private static func styledPartial(committed: String, live: String) -> NSAttributedString {
+        let para = NSMutableParagraphStyle()
+        para.lineBreakMode = .byTruncatingHead
+        let out = NSMutableAttributedString()
+        if !committed.isEmpty {
+            out.append(NSAttributedString(string: committed, attributes: [
+                .font: Brand.mono(18), .foregroundColor: Brand.bone,
+                .paragraphStyle: para,
+            ]))
+        }
+        if !live.isEmpty {
+            out.append(NSAttributedString(string: committed.isEmpty ? live : " " + live, attributes: [
+                .font: Brand.mono(18, .medium), .foregroundColor: Brand.bone,
+                .paragraphStyle: para,
+            ]))
+        }
+        return out
     }
 
     /// Feed the latest FFT frequency-band magnitudes into the spectrum meter.
