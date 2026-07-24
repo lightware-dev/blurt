@@ -93,9 +93,21 @@ final class HUD {
     }
 
     private func build() {
-        let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
-                         styleMask: .borderless, backing: .buffered, defer: false)
-        w.level = .statusBar
+        // A non-activating NSPanel — not a plain NSWindow — so that ordering it front
+        // over a full-screen app never steals focus or kicks that app out of
+        // fullscreen. (canJoinAllSpaces + fullScreenAuxiliary already get the pill
+        // *into* other apps' full-screen spaces.)
+        let w = NSPanel(contentRect: NSRect(origin: .zero, size: size),
+                        styleMask: [.borderless, .nonactivatingPanel],
+                        backing: .buffered, defer: false)
+        w.isFloatingPanel = true
+        w.hidesOnDeactivate = false
+        // Sit above .statusBar (25). The pill reaches every space, including other
+        // apps' full-screen spaces, but some full-screen apps paint their own content
+        // at or above the status-bar level and win the z-order fight — the pill is
+        // there but drawn underneath. .screenSaver (1000) clears that so the HUD stays
+        // visible on top of any full-screen app.
+        w.level = .screenSaver
         w.isOpaque = false
         w.backgroundColor = .clear
         w.hasShadow = true
