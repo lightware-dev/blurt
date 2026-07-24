@@ -73,6 +73,13 @@ class ParakeetASR:
         import torch
         import nemo.collections.asr as nemo_asr
 
+        # Cap CPU intra-op parallelism. Inference runs on the GPU, so ATen's CPU
+        # thread pool sits idle; leaving it at the default (one thread per core)
+        # just burns thread-stack memory. This mirrors OMP_NUM_THREADS from the
+        # Dockerfile and also covers the bare `./blurtd` path, where that env var
+        # isn't set. See the host-RAM tuning note in the Dockerfile for the rest.
+        torch.set_num_threads(int(os.getenv("OMP_NUM_THREADS", "2")))
+
         t0 = time.time()
         if not (torch.cuda.is_available() and torch.cuda.is_bf16_supported()):
             raise RuntimeError(

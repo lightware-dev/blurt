@@ -24,6 +24,16 @@ services:
       # LOG_STATS: "0"          # silence per-dictation stats (packets/bytes/duration)
       HOST: 0.0.0.0
       PORT: "25878"
+      # Host-RAM tuning. The Dockerfile ships sensible defaults (MALLOC_ARENA_MAX=2
+      # and *_NUM_THREADS=2) that cut idle RSS by ~1 GB on a GPU box — see the
+      # "Host-RAM tuning" note in the Dockerfile for why. Values set here override
+      # those defaults, so uncomment and raise them if you run blurtd CPU-only or
+      # want more CPU parallelism (at the cost of more resident memory):
+      # MALLOC_ARENA_MAX: "2"        # glibc malloc arenas; higher = more RAM, less lock contention
+      # OMP_NUM_THREADS: "2"         # torch/OpenMP CPU intra-op threads
+      # MKL_NUM_THREADS: "2"         # Intel MKL BLAS threads
+      # NUMEXPR_NUM_THREADS: "2"     # numexpr (pandas/librosa) threads
+      # NUMBA_NUM_THREADS: "2"       # numba JIT (librosa resample) threads
     # The host resolves DNS via systemd-resolved's loopback stub (127.0.0.53),
     # which isn't reachable from inside a container — so set a real resolver here
     # or model downloads from huggingface.co fail with "name resolution" errors.

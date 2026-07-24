@@ -55,6 +55,28 @@ ENV HOST=0.0.0.0 \
     PORT=25878 \
     HF_HOME=/root/.cache/huggingface
 
+# Host-RAM tuning. This is a GPU inference server: the real work runs on the
+# device and the process sits near-idle on CPU, yet torch/OpenMP/MKL/numba spin
+# up one thread pool per library (~60 threads by default), each carrying a stack
+# and its own glibc malloc arena. That inflates resident host RAM for no gain.
+#
+# MALLOC_ARENA_MAX caps glibc's per-thread heap arenas (default 8 × ncpu). Each
+# arena reserves and retains freed memory independently, so on a many-core host a
+# heavily-threaded process fragments RAM across dozens of arenas that never
+# release back to the OS. Pinning it to 2 concentrates allocations so freed pages
+# can actually be trimmed — typically a few hundred MB lower RSS. Must be an env
+# var (not set from Python): glibc reads it at libc init, before the interpreter
+# starts. The lock contention this trades away is irrelevant here — CPU is idle.
+#
+# The *_NUM_THREADS caps shrink those thread pools to match the near-zero CPU
+# load, cutting both thread-stack memory and pointless context switching. torch
+# also re-asserts its intra-op cap in code (see server/asr.py).
+ENV MALLOC_ARENA_MAX=2 \
+    OMP_NUM_THREADS=2 \
+    MKL_NUM_THREADS=2 \
+    NUMEXPR_NUM_THREADS=2 \
+    NUMBA_NUM_THREADS=2
+
 EXPOSE 25878
 
 # The entrypoint mints a TLS cert if needed, then runs `python -m server`.
