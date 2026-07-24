@@ -20,6 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let client = DictationClient()
     private let hud = HUD()
     private var recording = false
+    // Live protocol state for the HUD: the latest structured partial, whether the
+    // server's VAD currently hears speech, and whether the model is still loading.
+    private var partialCommitted = ""
+    private var partialLive = ""
+    private var serverHearing = false
+    private var serverLoading = false
     private var onboarding: OnboardingWindowController?
     private var settingsWindow: SettingsWindowController?
 
@@ -80,7 +86,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func wire() {
         audio.onFrame = { [weak self] data in self?.client.sendAudio(data) }
         audio.onSpectrum = { [weak self] bands in self?.hud.spectrum(bands) }
-        client.onPartial = { [weak self] text in self?.hud.show(text) }
+        client.onPartial = { [weak self] committed, live in
+            self?.partialCommitted = committed
+            self?.partialLive = live
+            self?.serverLoading = false   // text proves the model is up
+            self?.renderHUD()
+        }
+        // Server-side VAD: before any text arrives, flip the placeholder to
+        // "Hearing you…" — end-to-end confirmation that mic → network → server
+        // is alive (the waveform only proves the local mic works).
+        client.onVad = { [weak self] speech in
+            self?.serverHearing = speech
+            // `info` is a one-shot snapshot taken at connect; if it said
+            // "loading", nothing else would ever clear it and the placeholder
+            // would outrank "Hearing you…" for the whole dictation. Any event
+            // from the pipeline proves loading is done.
+            self?.serverLoading = false
+            self?.renderHUD()
+        }
+        client.onInfo = { [weak self] state, _ in
+            self?.serverLoading = (state == "loading")
+            self?.renderHUD()
+        }
         client.onFinal = { [weak self] text in
             self?.hud.hide()
             self?.client.close()
@@ -173,6 +200,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onboarding?.present()
     }
 
+    /// One render path for the live HUD: structured partial when there's text,
+    /// otherwise a placeholder that reflects what the server is actually doing.
+    private func renderHUD() {
+        guard recording else { return }
+        let placeholder = serverLoading ? "Loading model…"
+                        : serverHearing ? "Hearing you…"
+                        : "Listening…"
+        hud.show(committed: partialCommitted, live: partialLive, placeholder: placeholder)
+    }
+
     // MARK: dictation state machine
 
     @objc private func toggle() {
@@ -181,6 +218,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startRecording() {
         guard !recording else { return }
+        partialCommitted = ""
+        partialLive = ""
+        serverHearing = false
+        serverLoading = false
         client.connectAndStart()
         do {
             try audio.start()

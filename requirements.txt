@@ -1,6 +1,7 @@
 # Parakeet dictation server (local, GPU). Install torch matching your CUDA first
 # (this machine: torch 2.12+cu130 for the RTX 5090 / sm_120).
 fastapi>=0.115.0
+python-multipart>=0.0.9   # multipart forms for the OpenAI-compatible /v1 API
 uvicorn>=0.30.0
 websockets>=13.0
 nemo_toolkit[asr]>=2.0.0

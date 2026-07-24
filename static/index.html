@@ -55,8 +55,10 @@
 
   #out { min-height:220px; padding:22px; white-space:pre-wrap; font-size:20px;
          line-height:1.5; color:var(--bone); }
-  /* live/partial text: mono + dimmed (the messy blurt) */
-  #out.live { font-family:var(--mono); font-size:16px; color:var(--bone-dim); }
+  /* partials: mono. The live tail — what's being said right now — stays full
+     strength; text that has already settled recedes behind it. */
+  #out.live { font-family:var(--mono); font-size:16px; color:var(--bone); }
+  #out.live .settled { color:var(--bone-dim); }
   #out.placeholder { color:var(--bone-dim); font-size:16px; }
   .cursor { display:inline-block; width:.5em; height:1.05em; vertical-align:text-bottom;
             margin-left:2px; background:var(--bone); animation:blink 1.05s steps(1) infinite; }
@@ -113,6 +115,10 @@ const statusEl = document.getElementById('status');
 const dot = document.getElementById('dot');
 let ws, ctx, node, stream, recording = false;
 let transcript = '';       // latest text worth copying
+let dictationId = '';      // ties server messages to this dictation
+let serverModel = '';      // from the {info} handshake
+let hearing = false;       // server-side VAD: is it hearing speech?
+let loading = false;       // server still bringing the model up
 
 function setState(s){ stateEl.textContent = s; }
 function setStatus(s){ statusEl.textContent = s; }
@@ -125,12 +131,22 @@ function setTranscript(text){
   copyBtn.textContent = 'Copy';
 }
 
+// While recording with no text yet, the status line reflects what the server is
+// actually doing — "hearing you" is end-to-end proof the audio path works.
+function liveStatus(){
+  const what = loading ? 'loading model…' : hearing ? 'hearing you' : 'live';
+  setStatus(what + (serverModel ? ' · ' + serverModel : ''));
+}
+
 async function start(){
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.binaryType = 'arraybuffer';
   ws.onopen = async () => {
-    ws.send(JSON.stringify({type:'start'}));
+    dictationId = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
+    hearing = false;
+    ws.send(JSON.stringify({type:'start', id:dictationId,
+                            audio:{rate:16000, width:2, channels:1}}));
     stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1, echoCancellation:true, noiseSuppression:true}});
     ctx = new AudioContext();
     await ctx.audioWorklet.addModule('/static/pcm-worklet.js');
@@ -139,21 +155,43 @@ async function start(){
     node.port.onmessage = (e) => { if (recording && ws.readyState === 1) ws.send(e.data); };
     src.connect(node);
     recording = true;
-    dot.className = 'rec'; setState('recording'); setStatus('live');
+    dot.className = 'rec'; setState('recording'); liveStatus();
     btn.textContent = 'Stop'; btn.classList.add('rec');
   };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
-    if (m.type === 'status'){ setState(m.state + (m.detail ? ': '+m.detail : '')); }
+    // Drop messages from a dictation that isn't ours (a previous dictation's
+    // late final, for example). Connection-scoped messages carry no id.
+    if (m.id && m.id !== dictationId) return;
+    if (m.type === 'info'){
+      serverModel = (m.model || '').split('/').pop();
+      loading = m.state === 'loading';
+      liveStatus();
+    }
+    else if (m.type === 'status'){ setState(m.state + (m.detail ? ': '+m.detail : '')); }
+    else if (m.type === 'vad'){
+      hearing = !!m.speech;
+      loading = false;          // any pipeline event proves the model is up
+      if (recording) liveStatus();
+    }
     else if (m.type === 'partial'){
+      // Settled text recedes; the live tail — the words being spoken right
+      // now — is what the reader is watching, so it stays full strength.
+      const committed = m.committed || '';
+      const live = m.live || '';
+      loading = false;
       out.className = 'live';
-      out.innerHTML = escapeHtml(m.text) + '<span class="cursor"></span>';
-      setTranscript(m.text);
+      out.innerHTML = (committed ? '<span class="settled">' + escapeHtml(committed) + '</span>' : '')
+        + (committed && live ? ' ' : '')
+        + escapeHtml(live)
+        + '<span class="cursor"></span>';
+      setTranscript(m.text || '');
+      if (recording) liveStatus();
     }
     else if (m.type === 'final'){
       out.className = '';
-      out.textContent = m.text;
-      setState('final'); setTranscript(m.text);
+      out.textContent = m.text || '';
+      setState('final'); setTranscript(m.text || '');
     }
   };
   ws.onclose = () => { setState('idle'); setStatus('disconnected'); dot.className=''; };
@@ -161,9 +199,10 @@ async function start(){
 
 function stop(){
   recording = false;
+  hearing = false;
   btn.textContent = 'Start'; btn.classList.remove('rec');
-  dot.className = ''; setState('idle');
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'stop'}));
+  dot.className = ''; setState('idle'); setStatus('finishing…');
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'stop', id:dictationId}));
   if (node) node.disconnect();
   if (stream) stream.getTracks().forEach(t=>t.stop());
   if (ctx) ctx.close();

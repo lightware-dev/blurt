@@ -62,6 +62,11 @@ class ParakeetASR:
         self.dtype = None
         self._torch = None
 
+    @property
+    def is_loaded(self) -> bool:
+        """True once the model is resident and decodes will not block on a load."""
+        return self._model is not None
+
     def bf16_ckpt_path(self) -> str:
         """Where the pre-converted bf16 .nemo lives (override with PARAKEET_BF16_CKPT)."""
         return os.getenv("PARAKEET_BF16_CKPT") or os.path.expanduser(

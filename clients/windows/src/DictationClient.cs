@@ -5,20 +5,28 @@ using System.Text.Json;
 
 namespace Blurt;
 
-/// WebSocket client to the Parakeet server, the twin of the Mac client's
-/// DictationClient.swift. Sends {start}, streams PCM16 binary frames, sends
-/// {stop}; surfaces partial/final/status/error back to the caller. Callbacks fire
+/// WebSocket client to the Parakeet server (see docs/protocol.md), the twin of
+/// the Mac client's DictationClient.swift. Sends {start} with a fresh dictation
+/// id and the declared audio format, streams PCM16 binary frames, sends
+/// {stop}; surfaces info/vad/partial/final/status/error back to the caller.
+/// Messages tagged with a stale dictation id (a previous dictation's late
+/// final, for example) are dropped. Callbacks fire
 /// on a background thread — the app marshals them onto the UI thread.
 internal sealed class DictationClient
 {
-    public Action<string>? OnPartial;
+    public Action<string, string>? OnPartial; // (committed, live) — live may still be revised
     public Action<string>? OnFinal;
+    public Action<bool>? OnVad;               // server-side VAD: is it hearing speech?
+    public Action<string, string>? OnInfo;    // (state "ready|loading", model)
     public Action<string, string?>? OnStatus; // (state, detail)
     public Action<string>? OnError;
 
     private ClientWebSocket? _socket;
     private CancellationTokenSource? _cts;
     private volatile bool _closing;
+    // Written on the UI thread by ConnectAndStart, read on the receive-loop
+    // thread by Handle — volatile so the reader can't see a stale value.
+    private volatile string _dictationId = "";
 
     /// True once Close()/Cancel has begun tearing the session down. A partial can
     /// already be queued on the UI thread when that happens (e.g. Esc-cancel):
@@ -40,6 +48,7 @@ internal sealed class DictationClient
         }
 
         _closing = false;
+        _dictationId = Guid.NewGuid().ToString("N");
         _cts = new CancellationTokenSource();
         var socket = new ClientWebSocket();
         // Trust the server's self-signed cert (LAN use), matching the Mac client's
@@ -64,7 +73,12 @@ internal sealed class DictationClient
         try
         {
             await socket.ConnectAsync(url, ct).ConfigureAwait(false);
-            await SendJsonAsync(new { type = "start" }, ct).ConfigureAwait(false);
+            await SendJsonAsync(new
+            {
+                type = "start",
+                id = _dictationId,
+                audio = new { rate = 16000, width = 2, channels = 1 },
+            }, ct).ConfigureAwait(false);
             await ReceiveLoopAsync(socket, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -102,7 +116,8 @@ internal sealed class DictationClient
     }
 
     /// Ask the server to finalize; it replies with a {final} message.
-    public void Stop() => _ = SendJsonAsync(new { type = "stop" }, _cts?.Token ?? CancellationToken.None);
+    public void Stop() => _ = SendJsonAsync(new { type = "stop", id = _dictationId },
+        _cts?.Token ?? CancellationToken.None);
 
     public void Close()
     {
@@ -165,16 +180,37 @@ internal sealed class DictationClient
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             if (!root.TryGetProperty("type", out var typeEl)) return;
+            // Drop messages from a dictation that isn't ours (a late final from
+            // a previous session would otherwise get typed into the wrong
+            // context). Connection-scoped messages like info carry no id.
+            if (root.TryGetProperty("id", out var idEl)
+                && idEl.ValueKind == JsonValueKind.String
+                && idEl.GetString() is { Length: > 0 } id
+                && id != _dictationId)
+                return;
             var text = root.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
             switch (typeEl.GetString())
             {
-                case "partial": OnPartial?.Invoke(text); break;
+                case "partial":
+                    OnPartial?.Invoke(
+                        root.TryGetProperty("committed", out var c) ? c.GetString() ?? "" : "",
+                        root.TryGetProperty("live", out var l) ? l.GetString() ?? "" : "");
+                    break;
                 case "final": OnFinal?.Invoke(text); break;
+                case "vad":
+                    OnVad?.Invoke(root.TryGetProperty("speech", out var sp) && sp.GetBoolean());
+                    break;
+                case "info":
+                    OnInfo?.Invoke(
+                        root.TryGetProperty("state", out var st) ? st.GetString() ?? "" : "",
+                        root.TryGetProperty("model", out var mo) ? mo.GetString() ?? "" : "");
+                    break;
                 case "status":
                     OnStatus?.Invoke(
                         root.TryGetProperty("state", out var s) ? s.GetString() ?? "" : "",
                         root.TryGetProperty("detail", out var d) ? d.GetString() : null);
                     break;
+                // unknown types: ignored (forward compatibility)
             }
         }
         catch { /* malformed frame — ignore, matching the Swift best-effort parse */ }

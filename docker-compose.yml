@@ -10,6 +10,11 @@ services:
     container_name: blurtd
     ports:
       - "25878:25878"
+      # Wyoming protocol (Home Assistant STT) — disabled by default. To use it,
+      # set WYOMING_PORT: "10300" below and uncomment this mapping. That port has
+      # no auth and no TLS (AUTH_TOKEN does not apply to it), so only expose it
+      # on a network you trust.
+      # - "10300:10300"
     volumes:
       # Persists HuggingFace/NeMo model downloads *and* the auto-generated
       # self-signed TLS cert across restarts.
@@ -24,6 +29,9 @@ services:
       # LOG_STATS: "0"          # silence per-dictation stats (packets/bytes/duration)
       HOST: 0.0.0.0
       PORT: "25878"
+      # WYOMING_PORT: "10300"   # enable the Wyoming (Home Assistant STT) listener
+      # WYOMING_HOST: 0.0.0.0   # narrow the Wyoming bind without moving the WebSocket
+      # MAX_UPLOAD_MB: "200"    # /v1/audio/transcriptions upload ceiling
       # Host-RAM tuning. The Dockerfile ships sensible defaults (MALLOC_ARENA_MAX=2
       # and *_NUM_THREADS=2) that cut idle RSS by ~1 GB on a GPU box — see the
       # "Host-RAM tuning" note in the Dockerfile for why. Values set here override

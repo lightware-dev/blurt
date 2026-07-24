@@ -28,16 +28,49 @@ internal sealed class Hud
     // newer session has taken over the HUD in the meantime.
     private int _generation;
 
-    public void Show(string text)
+    public void Show(string text) => Show(text, "");
+
+    /// Render a structured partial: the live segment at full strength, settled
+    /// text receding behind it. With no text yet, `placeholder` is shown faded
+    /// ("Listening…", or "Hearing you…" once the server's VAD confirms speech).
+    public void Show(string committed, string live, string placeholder = "Listening…")
     {
         _generation++;
         Ensure();
-        var placeholder = string.IsNullOrEmpty(text);
+        var isPlaceholder = string.IsNullOrEmpty(committed) && string.IsNullOrEmpty(live);
         var label = _label!;
-        label.Text = placeholder ? "Listening…" : Tail(text);
-        label.FontSize = placeholder ? 17 : 18;
-        label.FontWeight = placeholder ? FontWeights.Normal : FontWeights.Medium;
-        label.Foreground = placeholder ? Brand.BoneDimBrush : Brand.BoneBrush;
+        label.Inlines.Clear();
+        if (isPlaceholder)
+        {
+            label.FontSize = 17;
+            label.FontWeight = FontWeights.Normal;
+            label.Foreground = Brand.BoneDimBrush;
+            label.Text = placeholder;
+        }
+        else
+        {
+            label.FontSize = 18;
+            label.FontWeight = FontWeights.Medium;
+            // Head-truncate the combined text first, then split the visible part
+            // into a settled run and the live run. The live segment — the words
+            // being spoken right now — keeps the full-strength treatment the HUD
+            // has always used; settled text behind it recedes to regular weight.
+            // Emphasising it the other way round would dim the whole pill for a
+            // typical dictation, since text only commits after a pause.
+            var sep = committed.Length > 0 && live.Length > 0 ? " " : "";
+            var full = committed + sep + live;
+            var cut = Math.Max(0, full.Length - MaxChars);
+            var visible = full[cut..];
+            var committedVisible = Math.Max(0, committed.Length - cut);
+            if (cut > 0)
+                label.Inlines.Add(new System.Windows.Documents.Run("…") { Foreground = Brand.BoneDimBrush });
+            if (committedVisible > 0)
+                label.Inlines.Add(new System.Windows.Documents.Run(visible[..committedVisible])
+                { Foreground = Brand.BoneBrush, FontWeight = FontWeights.Normal });
+            if (visible.Length > committedVisible)
+                label.Inlines.Add(new System.Windows.Documents.Run(visible[committedVisible..])
+                { Foreground = Brand.BoneBrush, FontWeight = FontWeights.Medium });
+        }
         // The waveform doubles as the rec indicator: it ripples while listening
         // and swells with the voice, so there's no separate rec dot.
         _wave!.Visibility = Visibility.Visible;
@@ -86,9 +119,6 @@ internal sealed class Hud
         };
         timer.Start();
     }
-
-    private static string Tail(string s) =>
-        s.Length <= MaxChars ? s : "…" + s[^MaxChars..];
 
     private void Ensure()
     {

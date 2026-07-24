@@ -1,15 +1,21 @@
 import Foundation
 
-/// WebSocket client to the Parakeet server. Sends {start}, streams PCM16, sends
-/// {stop}; surfaces partial/final/status back on the main queue.
+/// WebSocket client to the Parakeet server (see docs/protocol.md). Sends
+/// {start} with a fresh dictation id and the declared audio format, streams
+/// PCM16, sends {stop}; surfaces info/vad/partial/final/status back on the
+/// main queue. Messages tagged with a stale dictation id (a previous
+/// dictation's late final, for example) are dropped.
 final class DictationClient: NSObject, URLSessionDelegate {
     private var task: URLSessionWebSocketTask?
     private var closing = false
+    private var dictationID = ""
     private lazy var session: URLSession =
         URLSession(configuration: .default, delegate: self, delegateQueue: nil)
 
-    var onPartial: ((String) -> Void)?
+    var onPartial: ((String, String) -> Void)?   // (committed, live) — live may still be revised
     var onFinal: ((String) -> Void)?
+    var onVad: ((Bool) -> Void)?                 // server-side VAD: is it hearing speech?
+    var onInfo: ((String, String) -> Void)?      // (state "ready|loading", model)
     var onStatus: ((String, String?) -> Void)?   // (state, detail)
     var onError: ((String) -> Void)?
 
@@ -22,10 +28,12 @@ final class DictationClient: NSObject, URLSessionDelegate {
         }
         guard let url = comps.url else { onError?("Bad server URL"); return }
         closing = false
+        dictationID = UUID().uuidString
         let t = session.webSocketTask(with: url)
         task = t
         t.resume()
-        sendJSON(["type": "start"])
+        sendJSON(["type": "start", "id": dictationID,
+                  "audio": ["rate": 16000, "width": 2, "channels": 1]])
         receiveLoop()
     }
 
@@ -34,7 +42,7 @@ final class DictationClient: NSObject, URLSessionDelegate {
     }
 
     /// Ask the server to finalize; it will reply with a {final} message.
-    func stop() { sendJSON(["type": "stop"]) }
+    func stop() { sendJSON(["type": "stop", "id": dictationID]) }
 
     func close() {
         closing = true
@@ -73,11 +81,24 @@ final class DictationClient: NSObject, URLSessionDelegate {
             // (e.g. Esc-cancel): delivering it would resurrect the HUD after
             // the "Cancelled" flash and leave it stuck on screen.
             guard !self.closing else { return }
+            // Drop messages from a dictation that isn't ours (a late final from
+            // a previous session would otherwise get typed into the wrong
+            // context). Checked here rather than on the delegate queue so that
+            // `dictationID` is only ever touched on main — this callback runs
+            // on a URLSession queue, and a String assignment racing with a read
+            // is not merely stale, it's undefined. Connection-scoped messages
+            // like info carry no id and pass through.
+            if let id = obj["id"] as? String, !id.isEmpty, id != self.dictationID { return }
             switch type {
-            case "partial": self.onPartial?(obj["text"] as? String ?? "")
-            case "final":   self.onFinal?(obj["text"] as? String ?? "")
-            case "status":  self.onStatus?(obj["state"] as? String ?? "", obj["detail"] as? String)
-            default: break
+            case "partial":
+                self.onPartial?(obj["committed"] as? String ?? "",
+                                obj["live"] as? String ?? "")
+            case "final":  self.onFinal?(obj["text"] as? String ?? "")
+            case "vad":    self.onVad?(obj["speech"] as? Bool ?? false)
+            case "info":   self.onInfo?(obj["state"] as? String ?? "",
+                                        obj["model"] as? String ?? "")
+            case "status": self.onStatus?(obj["state"] as? String ?? "", obj["detail"] as? String)
+            default: break   // unknown types: ignored (forward compatibility)
             }
         }
     }
