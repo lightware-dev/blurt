@@ -83,6 +83,12 @@ internal sealed class Hud
     /// Must be called on the UI thread.
     public void Spectrum(float[] bands) => _wave?.SetBands(bands);
 
+    /// Reflect the server's voice-activity state: the meter runs at full
+    /// strength while the server reports speech and mutes when it doesn't, so
+    /// the pill shows the whole audio path is alive — not just the local mic.
+    /// Must be called on the UI thread.
+    public void Hearing(bool on) => _wave?.SetHearing(on);
+
     public void Hide()
     {
         _generation++;

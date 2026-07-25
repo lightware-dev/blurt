@@ -94,6 +94,13 @@ final class HUD {
         DispatchQueue.main.async { self.wave.setBands(bands) }
     }
 
+    /// Reflect the server's voice-activity state: the meter runs at full
+    /// strength while the server reports speech and mutes when it doesn't, so
+    /// the pill shows the whole audio path is alive — not just the local mic.
+    func hearing(_ on: Bool) {
+        DispatchQueue.main.async { self.wave.setHearing(on) }
+    }
+
     func hide() {
         DispatchQueue.main.async {
             self.generation += 1

@@ -102,6 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // would outrank "Hearing you…" for the whole dictation. Any event
             // from the pipeline proves loading is done.
             self?.serverLoading = false
+            // The placeholder only renders before the first word arrives, so
+            // the meter is what carries this state for the rest of the
+            // dictation.
+            self?.hud.hearing(speech)
             self?.renderHUD()
         }
         client.onInfo = { [weak self] state, _ in
@@ -235,7 +239,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Esc discards the in-flight dictation. Registered per-session so we only
         // capture Esc while actually listening. keyCode 53 = Escape, no modifiers.
         cancelKey = HotKey(keyCode: 53, modifiers: 0, id: 2) { [weak self] in self?.cancel() }
-        hud.show("")   // empty → HUD shows its faded "Listening…" placeholder
+        hud.hearing(false)   // muted until the server reports it hears speech
+        hud.show("")         // empty → HUD shows its faded "Listening…" placeholder
     }
 
     private func stopRecording() {
