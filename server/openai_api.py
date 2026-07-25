@@ -129,10 +129,13 @@ def _segment_bounds(audio: np.ndarray) -> list[tuple[int, int]]:
     """Split the file into decode segments at silences (offline pass of the
     same Silero VAD + thresholds the live path uses). Segments cover the whole
     file back-to-back, so cue timestamps include the surrounding silence."""
-    from server.app import SILENCE_MS, MAX_SEGMENT_S, MIN_SEGMENT_S
+    from server.app import SILENCE_MS, MAX_SEGMENT_S, MIN_SEGMENT_S, VAD_THRESHOLD
     from server.vad import SileroVAD
 
-    vad = SileroVAD()
+    # Threshold only — segments here cover the file back-to-back, so an upload
+    # is never gated the way the live path is: a caller who hands us a file has
+    # already decided it is worth transcribing.
+    vad = SileroVAD(threshold=VAD_THRESHOLD)
     win = 512
     max_seg = int(MAX_SEGMENT_S * SR)
     min_seg = int(MIN_SEGMENT_S * SR)

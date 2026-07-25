@@ -27,11 +27,14 @@ Wyoming has neither auth nor TLS; WYOMING_PORT=10300 opts in.
 The same port as the WebSocket also serves an OpenAI-compatible transcription
 API (server/openai_api.py): POST /v1/audio/transcriptions, GET /v1/models.
 
-Streaming model: audio is split into utterances at silences (Silero VAD). The
-active segment is re-decoded every ~PARTIAL_INTERVAL_MS for live partials, and
-committed to the transcript on a pause (or when it hits MAX_SEGMENT_S). This
-keeps VRAM bounded by the longest single utterance — not the whole session —
-while every decode still sees full segment context for low WER.
+Streaming model: the Silero VAD both gates and segments the audio. Only what it
+scores as speech is buffered — Parakeet has no VAD of its own, so background
+chatter that reaches it comes back as words — and the buffer is split into
+utterances at silences. The active segment is re-decoded every
+~PARTIAL_INTERVAL_MS for live partials, and committed to the transcript on a
+pause (or when it hits MAX_SEGMENT_S). This keeps VRAM bounded by the longest
+single utterance — not the whole session — while every decode still sees full
+segment context for low WER.
 """
 
 from __future__ import annotations
@@ -83,6 +86,18 @@ FINAL_MAX_S = float(os.getenv("FINAL_MAX_S", "120"))
 # Debounce for vad speech=false events: silence must persist this long before we
 # report the user stopped speaking (speech=true is reported immediately).
 VAD_OFF_MS = float(os.getenv("VAD_OFF_MS", "300"))
+# How sure Silero must be before audio counts as speech — and so before any of
+# it reaches the model. Raise it (0.6-0.7) when a noisy room's background voices
+# still get transcribed; lower it if your own quiet speech goes missing. Raising
+# it also delays the onset, so it pairs with a larger VAD_PREROLL_MS.
+VAD_THRESHOLD = float(os.getenv("VAD_THRESHOLD", "0.5"))
+# Padding around the speech the VAD keeps. Silero crosses its threshold a beat
+# after a word starts and drops below it while the last consonant is still
+# sounding, so gating on the raw decision clips both ends. Raise these if words
+# come back missing their first or last phoneme; lower them if too much room
+# tone survives the gate.
+VAD_PREROLL_MS = float(os.getenv("VAD_PREROLL_MS", "250"))
+VAD_HANGOVER_MS = float(os.getenv("VAD_HANGOVER_MS", "200"))
 # How long `stop` waits for the final decode before giving up and sending the
 # best text it already has. Generous on purpose: a decode that is merely slow
 # (a long dictation, or GPU contention with a /v1 request) must not silently
@@ -118,6 +133,12 @@ def server_info() -> dict:
 
 def _f32(pcm16: bytes) -> np.ndarray:
     return np.frombuffer(pcm16, dtype=np.int16).astype(np.float32) / 32768.0
+
+
+def _pcm16(f32: np.ndarray) -> bytes:
+    """Inverse of _f32. Exact for anything that came from PCM16 in the first
+    place — the /32768 scaling is lossless in both directions."""
+    return np.clip(np.rint(f32 * 32768.0), -32768, 32767).astype(np.int16).tobytes()
 
 
 def _log(msg: str):
@@ -175,7 +196,8 @@ class Session:
             _log("start during an active dictation — superseding it")
             self.abort()
         from server.vad import SileroVAD
-        self.vad = SileroVAD()
+        self.vad = SileroVAD(threshold=VAD_THRESHOLD,
+                             preroll_ms=VAD_PREROLL_MS, hangover_ms=VAD_HANGOVER_MS)
         self.committed = []
         self.dictation_id = dictation_id or uuid.uuid4().hex
         self.converter = converter or PcmConverter()
@@ -334,11 +356,25 @@ class Session:
 
                 if frame is None:  # stop sentinel
                     stopping = True
+                    # Whole-window classification always holds back <32 ms;
+                    # if the user stopped mid-word, that remainder is the end
+                    # of their last word.
+                    tail = self.vad.flush()
+                    if tail.size:
+                        pcm = _pcm16(tail)
+                        segment.extend(pcm)
+                        full.extend(pcm)
                 elif frame:
-                    segment.extend(frame)
-                    full.extend(frame)
-                    self.vad.process(_f32(frame))
+                    # Buffer what the VAD kept, not what arrived. Parakeet has
+                    # no VAD of its own, so anything that reaches it becomes
+                    # words — including a neighbour's conversation the VAD
+                    # correctly scored as non-speech.
+                    speech = self.vad.process(_f32(frame))
                     await self._update_vad_state(generation)
+                    if speech.size:
+                        pcm = _pcm16(speech)
+                        segment.extend(pcm)
+                        full.extend(pcm)
 
                 seg_samples = len(segment) // 2
 
