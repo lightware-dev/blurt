@@ -116,9 +116,9 @@ keypad (B→2, L→5, U→8, R→7, T→8). Override it with `--port` or `PORT`.
 
 Config (env or `.env`, all optional): `PARAKEET_BF16_CKPT`, `PARAKEET_BF16_REPO`,
 `HOST`, `PORT`, `AUTH_TOKEN`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
-`LOG_STATS`. See `.env.example`. `LOG_STATS` (default on) logs per-dictation
-metadata — packet count, bytes, audio duration, segments — never transcript text;
-set `LOG_STATS=0` to silence it.
+`VAD_THRESHOLD`, `VAD_PREROLL_MS`, `VAD_HANGOVER_MS`, `LOG_STATS`. See `.env.example`.
+`LOG_STATS` (default on) logs per-dictation metadata — packet count, bytes,
+audio duration, segments — never transcript text; set `LOG_STATS=0` to silence it.
 
 ### Docker
 

@@ -59,6 +59,8 @@ class FakeASR:
     def transcribe(self, audio_f32) -> str:
         if self.fail:
             raise RuntimeError("CUDA out of memory (simulated)")
+        if len(audio_f32) == 0:   # matches ParakeetASR: nothing in, nothing out
+            return ""
         n = max(1, int(len(audio_f32) / SR / 0.5))
         return " ".join(f"w{i}" for i in range(n))
 
@@ -70,26 +72,40 @@ class FakeASR:
 
 
 class FakeVAD:
-    """Speech when a frame is loud; same run-length interface as SileroVAD."""
+    """Speech when a frame is loud; same gate + run-length interface as SileroVAD.
 
-    def __init__(self, threshold: float = 0.5):
+    Classifies whole frames rather than 512-sample windows, but reuses the real
+    SpeechGate, so the padding behaviour under test is production code.
+    """
+
+    def __init__(self, threshold: float = 0.5,
+                 preroll_ms: float = 250.0, hangover_ms: float = 200.0):
+        from server.vad import SpeechGate
+        self.gate = SpeechGate(preroll_ms, hangover_ms)
         self.reset()
 
     def reset(self):
         self.speech_run = 0
         self.silence_run = 0
         self.saw_speech = False
+        self.gate.reset()
 
     def process(self, frame_f32):
         if len(frame_f32) == 0:
-            return
-        if float(np.abs(frame_f32).mean()) > 0.01:
+            return np.zeros(0, dtype=np.float32)
+        speech = float(np.abs(frame_f32).mean()) > 0.01
+        if speech:
             self.saw_speech = True
             self.speech_run += len(frame_f32)
             self.silence_run = 0
         else:
             self.silence_run += len(frame_f32)
             self.speech_run = 0
+        keep = self.gate.push(frame_f32, speech)
+        return np.concatenate(keep) if keep else np.zeros(0, dtype=np.float32)
+
+    def flush(self):
+        return np.zeros(0, dtype=np.float32)
 
     @property
     def silence_ms(self) -> float:
@@ -626,6 +642,76 @@ async def suite_pcm(app):
             check(f"rejects {bad}", True)
 
 
+# ---- speech gating -------------------------------------------------------
+
+async def suite_gate(app):
+    """The gate that keeps room noise away from the model.
+
+    Parakeet transcribes whatever it is handed, so background chatter the VAD
+    scores as non-speech must never be buffered — while the padding that stops
+    the gate from clipping word edges must still let it through.
+    """
+    from server.vad import SpeechGate
+
+    chunk = np.ones(1600, dtype=np.float32)      # 100 ms
+    g = SpeechGate(preroll_ms=250.0, hangover_ms=200.0)
+
+    check("non-speech is dropped", g.push(chunk, False) == [] and not g.open)
+
+    # onset: everything held as pre-roll comes back out ahead of the speech
+    for _ in range(4):
+        g.push(chunk, False)
+    onset = g.push(chunk, True)
+    check("onset flushes pre-roll ahead of speech",
+          len(onset) > 1 and onset[-1] is chunk, detail=f"{len(onset)} chunks")
+
+    # ...but only preroll_ms of it, however long the silence ran
+    g2 = SpeechGate(preroll_ms=250.0, hangover_ms=200.0)
+    for _ in range(200):                          # 20 s of silence
+        g2.push(chunk, False)
+    kept = sum(len(c) for c in g2.push(chunk, True)) - len(chunk)
+    check("pre-roll is bounded", kept <= int(0.25 * SR) + len(chunk),
+          detail=f"{kept / SR:.2f}s")
+
+    # hangover keeps the tail of a word, then closes
+    g3 = SpeechGate(preroll_ms=250.0, hangover_ms=200.0)
+    g3.push(chunk, True)
+    after = [g3.push(chunk, False) for _ in range(4)]
+    check("hangover keeps the word's tail, then closes",
+          after[0] and after[1] and not after[2] and not after[3] and not g3.open,
+          detail=str([len(a) for a in after]))
+
+    # a reset must not leave stale audio to be prepended to the next dictation
+    g3.push(chunk, False)
+    g3.reset()
+    check("reset drops held pre-roll", g3.push(chunk, True) == [chunk])
+
+    # end to end: a dictation of nothing but rejected audio yields no text
+    import websockets
+    url = f"ws://127.0.0.1:{WS_PORT}/ws"
+    async with running_server(app.app, WS_PORT):
+        async with websockets.connect(url) as ws:
+            await ws.recv()
+            did = uuid.uuid4().hex
+            await ws.send(json.dumps({"type": "start", "id": did}))
+            await ws.recv()
+            for _ in range(12):
+                await ws.send(pcm(0.1, loud=False))
+                await asyncio.sleep(0.02)
+            await asyncio.sleep(0.3)
+            await ws.send(json.dumps({"type": "stop", "id": did}))
+            msgs = []
+            while True:
+                m = json.loads(await asyncio.wait_for(ws.recv(), 15))
+                msgs.append(m)
+                if m["type"] == "final":
+                    break
+            partials = [m for m in msgs if m["type"] == "partial"]
+            check("non-speech never reaches the model",
+                  not msgs[-1]["text"] and not any(p["text"] for p in partials),
+                  detail=json.dumps(msgs[-1]))
+
+
 # ---- Wyoming interop, driven by the official client library ---------------
 
 async def suite_interop(app):
@@ -700,6 +786,7 @@ async def suite_interop(app):
 
 SUITES = {
     "pcm": suite_pcm,
+    "gate": suite_gate,
     "native": suite_native,
     "wyoming": suite_wyoming,
     "interop": suite_interop,

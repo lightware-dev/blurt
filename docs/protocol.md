@@ -213,6 +213,24 @@ stays visible for the whole dictation:
 A client that ignores `vad` entirely still works; it just can't tell a quiet
 room from a dead socket.
 
+The same decision also gates what gets transcribed at all: audio the VAD
+rejects is dropped before it reaches the model, since Parakeet has no VAD of
+its own and will turn a neighbour's conversation into words. `VAD_PREROLL_MS`
+of audio before each onset and `VAD_HANGOVER_MS` after each offset are kept
+too — the detector crosses its threshold a beat after a word starts and falls
+below it while the last consonant is still sounding, so gating on the raw
+decision clips both ends. A `vad speech:false` stretch therefore contributes
+nothing to `partial` or `final`.
+
+`VAD_THRESHOLD` (default `0.5`) sets how sure Silero must be, and so decides
+what counts as background in the first place. Silero flags even quiet, clean
+speech, so a room where an audible conversation is still being transcribed
+wants a *higher* threshold — not more padding. Raising it delays the onset,
+though, so raise `VAD_PREROLL_MS` alongside it.
+
+Uploads to `/v1` are segmented by the same VAD but never gated: handing us a
+file is itself a decision that its contents are worth transcribing.
+
 #### `partial` — the live transcript
 
 ```json
@@ -281,6 +299,8 @@ reports 1, whatever has been added since.
 | `STOP_TIMEOUT_S` | `60` | final-decode budget before `stop` returns committed text |
 | `MAX_QUEUED_FRAMES` | `4096` | cap on undecoded audio backlog per dictation |
 | `VAD_OFF_MS` | `300` | silence debounce before `vad speech:false` |
+| `VAD_THRESHOLD` | `0.5` | how sure Silero must be that a window is speech |
+| `VAD_PREROLL_MS` / `VAD_HANGOVER_MS` | `250` / `200` | padding kept around detected speech |
 | `MAX_UPLOAD_MB` / `MAX_AUDIO_S` | `200` / `7200` | `/v1` upload and duration ceilings |
 | `LOG_STATS` | `1` | per-dictation metadata logging (never transcript text) |
 
