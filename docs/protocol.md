@@ -196,9 +196,22 @@ of the dictation, not keep waiting. The connection stays usable: a fresh
 
 Emitted on transitions of the *server-side* Silero VAD. `speech: true` fires as
 soon as speech is detected; `speech: false` only after ~`VAD_OFF_MS` (default
-300 ms) of silence, so inter-word gaps don't flap. Clients use it as end-to-end
-confirmation that audio is arriving and being heard ("Hearing you…"), which the
-local waveform can't prove.
+300 ms) of silence, so inter-word gaps don't flap.
+
+This is the only signal that distinguishes "the server is listening" from "the
+connection died mid-dictation" — the HUD's meter is driven by the *local* mic,
+so it ripples identically either way. Blurt's clients therefore put it where it
+stays visible for the whole dictation:
+
+- **Desktop HUDs** drive the waveform's brightness from it: full strength while
+  the server reports speech, muted (never hidden — the local meter still has
+  something to say) when it doesn't, eased over ~270 ms so it can't strobe.
+  They also use it for the pre-transcript placeholder ("Hearing you…" instead
+  of "Listening…"), but that only shows until the first word arrives.
+- **The mic-test page** puts it in the status line, next to the model name.
+
+A client that ignores `vad` entirely still works; it just can't tell a quiet
+room from a dead socket.
 
 #### `partial` — the live transcript
 

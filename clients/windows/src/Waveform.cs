@@ -55,6 +55,17 @@ internal sealed class WaveformView : Canvas
     private DispatcherTimer? _timer;
     private bool _active;
 
+    // Server-side VAD presence, smoothed 0…1. The ribbons are driven by the
+    // *local* mic, so they ripple identically whether the server is listening
+    // or the connection died mid-dictation. Brightness is what distinguishes
+    // the two: full strength once the server confirms it hears speech, muted
+    // (never invisible — the local meter still has something to say) when it
+    // reports silence. That makes the whole mic -> network -> server path
+    // legible at a glance, which the FFT alone cannot show.
+    private double _hearing;
+    private double _hearingTarget;
+    private const double DimFloor = 0.4;
+
     public WaveformView()
     {
         // No ClipToBounds: let the front ribbon's soft glow bloom past the 96×34
@@ -91,6 +102,21 @@ internal sealed class WaveformView : Canvas
         if (_timer is null) StartAnimating();
     }
 
+    /// Reflect the server's voice-activity state in the meter's brightness.
+    /// Must be called on the UI thread.
+    public void SetHearing(bool on)
+    {
+        _hearingTarget = on ? 1.0 : 0.0;
+        // With no tick running there is nothing to ease the value, so snap it.
+        if (_timer is null)
+        {
+            _hearing = _hearingTarget;
+            ApplyPresence();
+        }
+    }
+
+    private void ApplyPresence() => Opacity = DimFloor + (1 - DimFloor) * _hearing;
+
     private static double Group(float[] v, int lo, int hi)
     {
         if (hi <= lo) return 0;
@@ -113,6 +139,11 @@ internal sealed class WaveformView : Canvas
             _targets[i] = 0;
             _paths[i].Data = null;
         }
+        // Start the next session muted: brightness is earned by the server
+        // actually reporting speech, not assumed.
+        _hearing = 0;
+        _hearingTarget = 0;
+        ApplyPresence();
     }
 
     private void StartAnimating()
@@ -130,6 +161,10 @@ internal sealed class WaveformView : Canvas
             double a = _targets[i] > _levels[i] ? 0.45 : 0.12; // fast attack, slow decay
             _levels[i] += (_targets[i] - _levels[i]) * a;
         }
+        // Ease the brightness rather than snapping it: VAD toggles on word
+        // boundaries, and a hard cut would strobe the pill.
+        _hearing += (_hearingTarget - _hearing) * 0.18;
+        ApplyPresence();
         Render();
     }
 

@@ -150,6 +150,10 @@ internal sealed class BlurtApp : IDisposable
             // would outrank "Hearing you…" for the whole dictation. Any event
             // from the pipeline proves loading is done.
             _serverLoading = false;
+            // The placeholder only renders before the first word arrives, so
+            // the meter is what carries this state for the rest of the
+            // dictation.
+            _hud.Hearing(speech);
             RenderHud();
         });
         _client.OnInfo = (state, _) => _ui.Invoke(() =>
@@ -269,7 +273,8 @@ internal sealed class BlurtApp : IDisposable
         // Esc discards the in-flight dictation. Registered per-session so we only
         // capture Esc while actually listening.
         _cancelKey = HotKey.Escape(() => _ui.Invoke(Cancel));
-        _hud.Show(""); // empty → HUD shows its faded "Listening…" placeholder
+        _hud.Show("");        // empty → HUD shows its faded "Listening…" placeholder
+        _hud.Hearing(false);  // muted until the server reports it hears speech
     }
 
     private void StopRecording()

@@ -15,6 +15,17 @@ final class WaveformView: NSView {
     private var timer: Timer?
     private var active = false
 
+    // Server-side VAD presence, smoothed 0…1. The ribbons are driven by the
+    // *local* mic, so they ripple identically whether the server is listening
+    // or the connection died mid-dictation. Brightness is what distinguishes
+    // the two: full strength once the server confirms it hears speech, muted
+    // (never invisible — the local meter still has something to say) when it
+    // reports silence. That makes the whole mic → network → server path
+    // legible at a glance, which the FFT alone cannot show.
+    private var hearing: CGFloat = 0
+    private var hearingTarget: CGFloat = 0
+    private static let dimFloor: CGFloat = 0.4
+
     // Ribbon look, back to front. Darker ribbons sit behind the bright one.
     private struct Ribbon {
         let color: NSColor
@@ -63,6 +74,20 @@ final class WaveformView: NSView {
         if timer == nil { startAnimating() }
     }
 
+    /// Reflect the server's voice-activity state in the meter's brightness.
+    func setHearing(_ on: Bool) {
+        hearingTarget = on ? 1 : 0
+        // With no tick running there is nothing to ease the value, so snap it.
+        if timer == nil {
+            hearing = hearingTarget
+            applyPresence()
+        }
+    }
+
+    private func applyPresence() {
+        alphaValue = Self.dimFloor + (1 - Self.dimFloor) * hearing
+    }
+
     /// Flatten the waves and stop animating — used when a session ends.
     func reset() {
         timer?.invalidate()
@@ -70,6 +95,11 @@ final class WaveformView: NSView {
         active = false
         levels = [0, 0, 0]
         targets = [0, 0, 0]
+        // Start the next session muted: brightness is earned by the server
+        // actually reporting speech, not assumed.
+        hearing = 0
+        hearingTarget = 0
+        applyPresence()
         needsDisplay = true
     }
 
@@ -85,6 +115,10 @@ final class WaveformView: NSView {
             let a: CGFloat = targets[i] > levels[i] ? 0.45 : 0.12   // fast attack, slow decay
             levels[i] += (targets[i] - levels[i]) * a
         }
+        // Ease the brightness rather than snapping it: VAD toggles on word
+        // boundaries, and a hard cut would strobe the pill.
+        hearing += (hearingTarget - hearing) * 0.18
+        applyPresence()
         needsDisplay = true
     }
 
