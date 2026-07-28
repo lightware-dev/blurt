@@ -32,6 +32,12 @@ on:
             - '.github/workflows/server.yml'
     workflow_dispatch:
 
+# Checkout is all this suite needs — it never touches the API with GITHUB_TOKEN.
+# Stated rather than inherited so a change to the repository default can't
+# silently widen it.
+permissions:
+    contents: read
+
 # A newer commit supersedes an in-flight run on the same branch/PR.
 concurrency:
     group: test-server-${{ github.ref }}

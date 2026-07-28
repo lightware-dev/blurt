@@ -18,6 +18,12 @@ on:
             - '.github/workflows/www.yml'
     workflow_dispatch:
 
+# Checkout only: the deploy authenticates to Cloudflare with its own API token,
+# not GITHUB_TOKEN. Stated rather than inherited so a change to the repository
+# default can't silently widen it.
+permissions:
+    contents: read
+
 # Never let two deploys race; cancel an in-flight run if a newer commit lands.
 concurrency:
     group: deploy-www
