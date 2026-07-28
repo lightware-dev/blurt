@@ -1,0 +1,24 @@
+# Security response headers for the marketing site, served by Cloudflare Workers
+# static assets (this file is copied verbatim into .open-next/assets by the
+# OpenNext build).
+#
+# Scope check before you tighten anything here: this is a static marketing page
+# with no authentication, no cookies, no user input and no dynamic data. There
+# is no session to steal and no injection sink to protect, so the honest value
+# of most of this is a clean scanner report. The one line doing real work is
+# `frame-ancestors 'none'`, which stops the page being framed for clickjacking.
+#
+# On `script-src 'unsafe-inline'`: Next inlines the hydration payload
+# (`self.__next_f.push(...)`) directly into the document, so a strict script-src
+# blanks the page. The alternatives are both worse here — per-build hashes churn
+# on every deploy, and nonces need middleware, which would opt the page out of
+# static rendering. `style-src` needs it for the same reason.
+#
+# HSTS is deliberately without `preload`: preloading is effectively irreversible
+# and is not a commitment worth making for a marketing site.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
