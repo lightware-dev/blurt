@@ -210,12 +210,34 @@ jobs:
             - name: bump Homebrew cask
               if: steps.cfg.outputs.release == 'true'
               env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
               run: |
                   set -euo pipefail
                   VERSION="${GITHUB_REF_NAME#v}"
-                  ZIP="${{ steps.artifact.outputs.zip }}"
-                  SHA="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
+
+                  # Hash what the release actually carries, not what this run built.
+                  # The upload above skips assets that are already published, and a
+                  # rebuild is never byte-identical to an earlier one: codesign embeds a
+                  # fresh Apple timestamp, stapling embeds a newly-issued notarization
+                  # ticket, ditto records new mtimes. So on a re-run (say the push below
+                  # failed the first time and the operator hit "Re-run failed jobs") the
+                  # local zip and the published one differ, and hashing the local one
+                  # would point the cask at a file whose checksum can never match —
+                  # breaking `brew install` for everyone, with the workflow still green.
+                  PUB="$RUNNER_TEMP/published"
+                  mkdir -p "$PUB"
+                  gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                      --pattern "Blurt-${VERSION}-macOS.zip" --dir "$PUB" --clobber
+                  SHA="$(shasum -a 256 "$PUB/Blurt-${VERSION}-macOS.zip" | awk '{print $1}')"
+
+                  # Loud when the release is carrying a build other than this run's —
+                  # correct, but the operator should know the tag and the artifacts in
+                  # this run's logs are not the same bytes.
+                  LOCAL_SHA="$(shasum -a 256 "${{ steps.artifact.outputs.zip }}" | awk '{print $1}')"
+                  if [ "$SHA" != "$LOCAL_SHA" ]; then
+                      echo "::notice::published asset predates this run — casking the published bytes ($SHA), not this run's rebuild ($LOCAL_SHA)"
+                  fi
 
                   git clone --depth 1 \
                       "https://x-access-token:${TAP_TOKEN}@github.com/lightware-dev/homebrew-tap.git" tap
