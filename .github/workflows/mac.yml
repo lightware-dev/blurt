@@ -34,10 +34,19 @@ jobs:
             - name: checkout
               uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
+            # Inlined instead of using a third-party action: every action in this job
+            # runs alongside the Developer ID key, the notary key and HOMEBREW_TAP_TOKEN,
+            # so the fewer that live here the better. Runner images ship each toolchain
+            # as /Applications/Xcode_<version>.app, with prereleases suffixed _beta.
             - name: select latest stable Xcode
-              uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
-              with:
-                  xcode-version: latest-stable
+              run: |
+                  set -euo pipefail
+                  XCODE="$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -v beta | sort -V | tail -1 || true)"
+                  if [ -z "$XCODE" ]; then
+                      echo "::error::No stable /Applications/Xcode_*.app on the runner — image layout changed." >&2
+                      exit 1
+                  fi
+                  sudo xcode-select -s "$XCODE/Contents/Developer"
 
             - name: toolchain versions
               run: |
