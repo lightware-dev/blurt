@@ -173,3 +173,35 @@ jobs:
                   gh release upload "$GITHUB_REF_NAME" \
                       "$ZIP" "clients/mac/dist/Blurt-macOS.zip" \
                       --repo "$GITHUB_REPOSITORY" --clobber
+
+            # ---- release: bump the Homebrew cask in lightware-dev/homebrew-tap ----
+            # Point the cask at the just-published notarized zip. The versioned asset
+            # name (Blurt-<version>-macOS.zip) matches the url template in the cask, so
+            # we only rewrite the `version` and `sha256` lines. Needs HOMEBREW_TAP_TOKEN:
+            # a PAT (or fine-grained token) with contents:write on the tap repo.
+            - name: bump Homebrew cask
+              if: steps.cfg.outputs.release == 'true'
+              env:
+                  TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+              run: |
+                  set -euo pipefail
+                  VERSION="${GITHUB_REF_NAME#v}"
+                  ZIP="${{ steps.artifact.outputs.zip }}"
+                  SHA="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
+
+                  git clone --depth 1 \
+                      "https://x-access-token:${TAP_TOKEN}@github.com/lightware-dev/homebrew-tap.git" tap
+                  CASK="tap/Casks/blurt.rb"
+                  /usr/bin/sed -i '' -E "s/^  version \".*\"/  version \"${VERSION}\"/" "$CASK"
+                  /usr/bin/sed -i '' -E "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" "$CASK"
+
+                  cd tap
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  if git diff --quiet; then
+                      echo "cask already at ${VERSION} — nothing to push"
+                      exit 0
+                  fi
+                  git add Casks/blurt.rb
+                  git commit -m "blurt ${VERSION}"
+                  git push

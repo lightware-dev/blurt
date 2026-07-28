@@ -144,6 +144,11 @@ export default function Home() {
                     no account · no cloud · no “we’ve updated our privacy policy” email
                 </p>
 
+                <p className="mt-4 font-mono text-xs text-bone-dim">
+                    got a server running? grab the Mac app:{' '}
+                    <code className="text-bone">brew install --cask lightware-dev/tap/blurt</code>
+                </p>
+
                 {/* the star of the show */}
                 <div className="mt-14">
                     <BlurtDemo />

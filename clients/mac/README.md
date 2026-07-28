@@ -3,6 +3,20 @@
 Native Swift menu-bar app that streams your mic to the Parakeet server and types
 the transcript into the focused field. No Dock icon; lives in the menu bar.
 
+## Install
+
+The signed + notarized build ships through our [Homebrew tap](https://github.com/lightware-dev/homebrew-tap):
+
+```bash
+brew install --cask lightware-dev/tap/blurt
+```
+
+`brew upgrade --cask blurt` tracks new releases (the cask is bumped
+automatically when a `v*` tag is published — see [CI & releases](#ci--releases)).
+Or grab the zip directly from the [latest release](https://github.com/lightware-dev/blurt/releases/latest).
+
+You still need a running Parakeet server to point it at — see the repo root README.
+
 ## Build (on the Mac)
 
 Requires the Xcode command-line tools (`xcode-select --install`). No third-party
@@ -66,6 +80,12 @@ The website links the fixed URL:
 https://github.com/lightware-dev/blurt/releases/latest/download/Blurt-macOS.zip
 ```
 
+It then **bumps the Homebrew cask** in
+[`lightware-dev/homebrew-tap`](https://github.com/lightware-dev/homebrew-tap):
+the workflow hashes the notarized zip and pushes the new `version` + `sha256`
+into `Casks/blurt.rb`, so `brew install --cask lightware-dev/tap/blurt` tracks
+the release with no manual edits.
+
 The workflow refuses to publish if the tag doesn't match the bundle version, or
 if the signing secrets are missing (never ships an un-notarized release).
 
@@ -76,6 +96,9 @@ Secrets (sensitive):
 - `DEVID_CERT_PASSWORD` — the `.p12` export password
 - `KEYCHAIN_PASSWORD` — throwaway password for the temporary CI keychain
 - `NOTARY_KEY_P8_BASE64` — base64 of the App Store Connect API key `.p8`
+
+- `HOMEBREW_TAP_TOKEN` — fine-grained PAT with Contents:write on the tap repo,
+  so the release job can push the cask bump
 
 Variables (non-sensitive identifiers — useless without the `.p8`):
 - `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID`
