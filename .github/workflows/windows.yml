@@ -147,12 +147,27 @@ jobs:
                       gh release create "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" `
                           --title "Blurt $env:GITHUB_REF_NAME" --generate-notes
                   }
-                  # Deliberately no --clobber: a published asset must never be replaced
-                  # in place. Overwriting is the one step that would let a leaked
-                  # contents:write token swap the download out from under the in-app
-                  # updater without any code push. If a re-run needs to re-upload, delete
-                  # the asset by hand first (`gh release delete-asset`) so it's a
-                  # conscious act.
-                  gh release upload "$env:GITHUB_REF_NAME" `
-                      "$zip" "dist/Blurt-Windows.zip" `
-                      --repo "$env:GITHUB_REPOSITORY"
+                  # Deliberately no --clobber: a published asset is never replaced in
+                  # place. This is defence in depth against an *accidental* overwrite —
+                  # a re-run, or a tag pushed twice — not a control on a leaked
+                  # contents:write token, which can delete and re-upload through the API
+                  # without going near this workflow. What actually defends against that
+                  # is signing (the updater refusing anything not signed by us) and build
+                  # provenance.
+                  #
+                  # Skip-if-present rather than failing on a conflict, so a re-run of a
+                  # partially-completed release isn't wedged behind hand-deleting the
+                  # assets it already uploaded.
+                  # @(...) forces an array even when the release has zero or one asset,
+                  # so -contains behaves the same in all three cases.
+                  $published = @(gh release view "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" `
+                      --json assets --jq '.assets[].name' | ForEach-Object { $_.Trim() })
+                  foreach ($f in @($zip, "dist/Blurt-Windows.zip")) {
+                      $name = Split-Path $f -Leaf
+                      if ($published -contains $name) {
+                          Write-Output "::notice::$name is already published — leaving it untouched"
+                      } else {
+                          gh release upload "$env:GITHUB_REF_NAME" $f --repo "$env:GITHUB_REPOSITORY"
+                          if ($LASTEXITCODE -ne 0) { Write-Error "upload of $name failed"; exit 1 }
+                      }
+                  }
