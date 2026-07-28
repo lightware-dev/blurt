@@ -527,6 +527,12 @@ async def suite_openai(app):
                              files={"file": ("x.bin", b"not audio", "application/octet-stream")})
             check("undecodable upload -> 400", r.status_code == 400
                   and "error" in r.json())
+            # ffmpeg's stderr is folded into the ValueError; it stays in the
+            # log, so the caller gets this exact message and nothing else.
+            check("400 carries no decoder detail",
+                  r.json()["error"]["message"]
+                  == "Could not decode audio (unsupported or corrupt file).",
+                  detail=r.text)
 
             # oversized upload rejected on Content-Length, before the body is read
             import server.openai_api as oa
@@ -577,10 +583,17 @@ async def suite_openai(app):
             check("stream error is reported in-band",
                   any(e.get("type") == "error" for e in events), detail=str(events[:2]))
             check("stream still terminates on error", sentinel)
+            # The exception text comes from NeMo/PyTorch and can name the
+            # checkpoint path or the GPU; the caller gets a fixed message.
+            check("stream error carries no exception detail",
+                  not any("simulated" in json.dumps(e) for e in events),
+                  detail=str(events[:2]))
 
             r = await c.post(f"{base}/v1/audio/transcriptions", files=files)
             check("non-stream decode failure -> 500 in OpenAI shape",
                   r.status_code == 500 and "error" in r.json())
+            check("500 carries no exception detail", "simulated" not in r.text,
+                  detail=r.text)
             app.asr.fail = False
 
             # auth
