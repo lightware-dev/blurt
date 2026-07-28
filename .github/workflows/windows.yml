@@ -147,6 +147,12 @@ jobs:
                       gh release create "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" `
                           --title "Blurt $env:GITHUB_REF_NAME" --generate-notes
                   }
+                  # Deliberately no --clobber: a published asset must never be replaced
+                  # in place. Overwriting is the one step that would let a leaked
+                  # contents:write token swap the download out from under the in-app
+                  # updater without any code push. If a re-run needs to re-upload, delete
+                  # the asset by hand first (`gh release delete-asset`) so it's a
+                  # conscious act.
                   gh release upload "$env:GITHUB_REF_NAME" `
                       "$zip" "dist/Blurt-Windows.zip" `
-                      --repo "$env:GITHUB_REPOSITORY" --clobber
+                      --repo "$env:GITHUB_REPOSITORY"

@@ -90,8 +90,11 @@ internal static class Updater
         var extractDir = Path.Combine(work, "extracted");
         ZipFile.ExtractToDirectory(zipPath, extractDir);
 
+        // Only ever install a file actually named Blurt.exe. There is deliberately no
+        // "any *.exe in the archive" fallback: if the package layout ever changes,
+        // failing loudly is correct — quietly installing whatever executable happens to
+        // be in the zip is not.
         return Directory.EnumerateFiles(extractDir, "Blurt.exe", SearchOption.AllDirectories).FirstOrDefault()
-            ?? Directory.EnumerateFiles(extractDir, "*.exe", SearchOption.AllDirectories).FirstOrDefault()
             ?? throw new InvalidOperationException("The update package didn't contain Blurt.exe.");
     }
 
