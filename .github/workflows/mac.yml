@@ -179,9 +179,15 @@ jobs:
                   gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
                       || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
                              --title "Blurt $GITHUB_REF_NAME" --generate-notes
+                  # Deliberately no --clobber: a published asset must never be replaced
+                  # in place. Overwriting is the one step that would let a leaked
+                  # contents:write token swap the download out from under the in-app
+                  # updater without any code push. If a re-run needs to re-upload, delete
+                  # the asset by hand first (`gh release delete-asset`) so it's a
+                  # conscious act.
                   gh release upload "$GITHUB_REF_NAME" \
                       "$ZIP" "clients/mac/dist/Blurt-macOS.zip" \
-                      --repo "$GITHUB_REPOSITORY" --clobber
+                      --repo "$GITHUB_REPOSITORY"
 
             # ---- release: bump the Homebrew cask in lightware-dev/homebrew-tap ----
             # Point the cask at the just-published notarized zip. The versioned asset
