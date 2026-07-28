@@ -269,7 +269,7 @@ parts build independently: `server/` (Python), `clients/mac/` (Swift), and
 ## Files
 
 ```
-server/            Parakeet streaming server (asr, vad, app, models, __main__)
+server/            Parakeet streaming server (app, asr, vad, pcm, openai_api, wyoming)
 clients/mac/       Swift menu-bar app + build-app.sh + notarize.sh
 clients/windows/   .NET 8 / WPF tray app + Blurt.csproj
 www/               marketing site (Next.js) for blurtvoice.com

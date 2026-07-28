@@ -1,7 +1,7 @@
 # blurt — www
 
 Marketing site for Blurt. Next.js (App Router) + Tailwind v4, deployed to
-Cloudflare Workers via OpenNext. Same stack as `../../chronicle/www`.
+Cloudflare Workers via OpenNext.
 
 ## Develop
 
@@ -33,9 +33,3 @@ The pitch is speed and privacy ("talk faster than you type"), not cleanup.
 The tone leans into how crowded the space is ("yet another dictation app") rather
 than pretending to be revolutionary. Copy voice + rationale live in
 `../docs/branding.md`.
-
-## TODO before launch
-
-- The `GITHUB` constant in `src/app/page.tsx` points at
-  `github.com/lightware-dev/blurt` — confirm the repo is pushed there.
-- Add an `og-image.png` (1200×630) for social cards.
