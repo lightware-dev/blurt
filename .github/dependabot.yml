@@ -1,0 +1,15 @@
+# Workflow actions are pinned to full commit SHAs (see .github/workflows/*.yml), which
+# stops a retagged upstream from executing in jobs that hold our signing keys — but it
+# also means pins never move on their own. Dependabot bumps the SHA and the trailing
+# version comment together, so updates stay reviewable instead of silently rotting.
+version: 2
+updates:
+    - package-ecosystem: github-actions
+      directory: /
+      schedule:
+          interval: weekly
+      groups:
+          # One PR for all of them; these bump together and are reviewed as a set.
+          actions:
+              patterns:
+                  - '*'
