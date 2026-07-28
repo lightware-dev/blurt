@@ -11,7 +11,7 @@ voice never leaves your LAN.
 Three parts:
 
 - **`server/`** — a lean NVIDIA **Parakeet** streaming ASR server (Python + NeMo)
-  that runs on any modern NVIDIA GPU (developed on an RTX 5090). Modest VRAM
+  that runs on any modern NVIDIA GPU (Turing or newer). Modest VRAM
   (~2.3 GB, bf16), low WER, near-realtime live partials over a WebSocket.
 - **`clients/mac/`** — a native **macOS menu-bar app** (Swift, universal
   arm64 + x86_64). A global hotkey toggles dictation; live text shows in a HUD;
@@ -21,7 +21,7 @@ Three parts:
   live HUD with audio waveform, and text injected into the focused field.
 
 ```
- mic ─▶ AVAudioEngine (16 kHz PCM16) ─▶ WebSocket ─▶ Parakeet server (5090)
+ mic ─▶ AVAudioEngine (16 kHz PCM16) ─▶ WebSocket ─▶ Parakeet server (NVIDIA GPU)
                                                         │  Silero VAD → segment
  double-tap ⌥ toggles ◀── HUD partials / final text ◀──┘  re-decode every ~350ms
         │
@@ -47,7 +47,7 @@ or from source:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt           # torch must match your CUDA (5090 → cu130)
+pip install -r requirements.txt           # torch must match your CUDA (cu130 covers RTX 20–50)
 ./scripts/gen_certs.sh                     # self-signed TLS so browsers/clients get wss://
 ./blurtd                                   # serves wss://<this-box-ip>:25878/ws
 ```
@@ -73,7 +73,7 @@ with [`scripts/ws_client_test.py`](#validate-without-a-client).
 ## Why this design
 
 - **Model:** `parakeet-tdt-0.6b-v3` — multilingual (English + Portuguese + 23 more),
-  tops the ASR accuracy leaderboard, only ~0.6B params. On the 5090 it decodes at
+  tops the ASR accuracy leaderboard, only ~0.6B params. On an RTX 5090 it decodes at
   **RTF ~0.002–0.01** (a 35 s clip in ~70 ms) using **~2.3 GB VRAM** (bf16,
   measured via `nvidia-smi`; ~1.4 GB of that is live tensors, the rest CUDA
   context + reserved pools).
@@ -92,7 +92,7 @@ what it does. `./blurtd` is a thin wrapper around `python -m server`.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt          # torch must match your CUDA (5090 → cu130)
+pip install -r requirements.txt          # torch must match your CUDA (cu130 covers RTX 20–50)
 
 ./blurtd                                  # serve parakeet-tdt-0.6b-v3 (bf16, GPU)
 ./blurtd --port 8000                      # on another port
@@ -147,7 +147,7 @@ own by mounting `-v ./certs:/app/certs:ro`, or set `BLURT_AUTOCERT=0` to fall
 back to `ws://`. Full smoke test once it's up: `python scripts/ws_client_test.py
 audio/clean.wav`.
 
-**Supported GPUs.** The image runs on any NVIDIA consumer card from the
+**Supported GPUs.** The server — image or source install — runs on any NVIDIA consumer card from the
 **RTX 20-series (and GTX 16-series) through the RTX 50-series** — the torch
 wheel carries native `sm_75/86/90/100/120` kernels, and CUDA minor-version
 compatibility covers Ada (RTX 40-series) via the `sm_86` binaries.

@@ -2,7 +2,7 @@
 #
 # GPU image. The torch cu130 wheels bundle the CUDA + cuDNN runtime, so a plain
 # python base is enough — the NVIDIA Container Toolkit injects the host driver at
-# run time. Requires `--gpus all` (driver must support CUDA 13; 5090 → 570+).
+# run time. Requires `--gpus all` and a driver that supports CUDA 13 (>= 580).
 #
 #   docker build -t blurtd .
 #   docker run --gpus all -p 25878:25878 -v blurt-cache:/root/.cache blurtd
@@ -29,7 +29,8 @@ WORKDIR /app
 # requirements.txt (NeMo, fastapi, etc.).
 #
 # torch is installed first, from the PyTorch index, so NeMo sees it already
-# satisfied. cu130 wheels match the RTX 5090 (sm_120).
+# satisfied. The cu130 wheels carry sm_75/86/90/100/120 kernels, covering
+# Turing through Blackwell.
 RUN pip install --no-cache-dir torch==2.12.1 \
         --index-url https://download.pytorch.org/whl/cu130
 

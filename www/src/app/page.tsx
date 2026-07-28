@@ -203,7 +203,7 @@ export default function Home() {
                         {
                             k: '02',
                             h: 'It’s stupid fast.',
-                            p: 'NVIDIA Parakeet on a 5090 transcribes a 35-second clip in about 80ms. Live partials appear as you talk. It finishes before you do.',
+                            p: 'NVIDIA Parakeet on an RTX 5090 transcribes a 35-second clip in about 80ms — and any GPU from the 20-series up runs it. Live partials appear as you talk. It finishes before you do.',
                         },
                         {
                             k: '03',
