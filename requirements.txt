@@ -1,6 +1,14 @@
 # Parakeet dictation server (local, GPU). Install torch matching your CUDA first
 # (torch 2.12+cu130 covers Turing through Blackwell — see "Supported GPUs" in
 # the README; it needs driver >= 580).
+#
+# NOT LOCKED YET — these are floors, so `docker build` today and next month
+# resolve different transitive trees, and a compromised upstream release lands
+# on the next rebuild with no diff to review. requirements-test.in/.txt is the
+# same set of files done properly and is the pattern to copy; see #10 for the
+# torch complication that stops it being a mechanical repeat (torch is installed
+# separately from the cu130 index and must not be dragged in from PyPI by the
+# lock).
 fastapi>=0.115.0
 python-multipart>=0.0.9   # multipart forms for the OpenAI-compatible /v1 API
 uvicorn>=0.30.0
