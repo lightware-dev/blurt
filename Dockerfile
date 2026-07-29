@@ -36,12 +36,23 @@ WORKDIR /app
 # torch is installed first, from the PyTorch index, so NeMo sees it already
 # satisfied. The cu130 wheels carry sm_75/86/90/100/120 kernels, covering
 # Turing through Blackwell.
+#
+# Keep this version in lockstep with the `torch==` pin in requirements.in: the
+# lock is resolved against it, so if the two drift the rest of the tree ends up
+# pinned against a torch that is never installed here.
 RUN pip install --no-cache-dir torch==2.12.1 \
         --index-url https://download.pytorch.org/whl/cu130
 
-# The rest from PyPI (nemo_toolkit[asr], fastapi, uvicorn, silero-vad, …).
+# The rest from PyPI (nemo_toolkit[asr], fastapi, uvicorn, silero-vad, …),
+# fully pinned with hashes — see requirements.in and scripts/lock-requirements.sh.
+#
+# --require-hashes makes the build reproducible and turns a tampered-with or
+# re-uploaded wheel into a failed build rather than a silent install. torch and
+# its CUDA runtime are excluded from the lock precisely because they are already
+# installed above; pip leaves an already-satisfied dependency alone, so nothing
+# here reaches back to PyPI for them.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 # openssl for the entrypoint's self-signed cert. Kept in its own late layer so
 # the heavy torch/NeMo layers above stay cached across rebuilds.
