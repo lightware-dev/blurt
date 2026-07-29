@@ -5,7 +5,7 @@
 # run time. Requires `--gpus all` and a driver that supports CUDA 13 (>= 580).
 #
 #   docker build -t blurtd .
-#   docker run --gpus all -p 25878:25878 -v blurt-cache:/home/blurt/.cache blurtd
+#   docker run --gpus all -p 25878:25878 -v blurtd-cache:/home/blurt/.cache blurtd
 #
 # Models are pulled from HuggingFace on first run into /home/blurt/.cache —
 # mount a volume there (as above) so you don't re-download on every start.
