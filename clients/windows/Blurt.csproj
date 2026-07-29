@@ -34,7 +34,7 @@
 
   <ItemGroup>
     <!-- WASAPI/WinMM mic capture + resampling to 16 kHz mono PCM16. -->
-    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="NAudio" Version="2.3.0" />
   </ItemGroup>
 
   <!-- UseWindowsForms + ImplicitUsings would inject `global using System.Windows.Forms`
