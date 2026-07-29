@@ -1,10 +1,27 @@
 name: Build Windows app
 
 # Builds Blurt for Windows as a single self-contained Blurt.exe and publishes it as
-# a downloadable zip — the Windows twin of mac.yml. When an Authenticode signing
-# cert is present (secrets on push to main / tag / manual run) the exe is signed;
-# otherwise it ships unsigned (SmartScreen will warn on first launch). Pushing a
-# `v*` tag additionally publishes a GitHub Release with the zip attached.
+# a downloadable zip — the Windows twin of mac.yml. Pushing a `v*` tag additionally
+# publishes a GitHub Release with the zip attached.
+#
+# WINDOWS BUILDS ARE NOT SIGNED. There is no Authenticode certificate, so users
+# get a SmartScreen warning on first launch. This file used to carry a `sign exe`
+# step gated on a WINDOWS_CERT_PFX_BASE64 secret that was never set: it had never
+# run, every release we have ever shipped was unsigned, and the config read as
+# though the opposite were true. That was not a cosmetic problem — a security
+# review of this repo produced an unshippable recommendation off the back of it
+# ("verify the extracted exe's Authenticode signature before ApplyUpdate"), which
+# would have rejected every genuine update. So the step is gone rather than left
+# looking load-bearing; see #9.
+#
+# What the artifacts do carry is a signed build provenance attestation (#24):
+#   gh attestation verify Blurt-Windows.zip --repo lightware-dev/blurt
+#
+# To add real signing, restore a `sign exe` step *and* provision the secrets in
+# the same change — and put them in an Environment scoped to main/v* (#20) rather
+# than at repo scope. Note what signing does not buy: this workflow signs on any
+# push to main and any v* tag, so anyone with write access can have CI sign their
+# payload. It defends a release asset replaced *without* a code push.
 #
 # Path-filtered to clients/windows/** so it doesn't run on server/www-only pushes.
 # NOTE: path filters are ignored for tag pushes, so `v*` tags always run — exactly
@@ -61,11 +78,7 @@ jobs:
 
             - name: determine build mode
               id: cfg
-              env:
-                  PFX: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
               run: |
-                  $signed = ($env:PFX -and $env:GITHUB_EVENT_NAME -ne 'pull_request')
-                  "signed=$($signed.ToString().ToLower())" >> $env:GITHUB_OUTPUT
                   $release = "$env:GITHUB_REF".StartsWith('refs/tags/v')
                   "release=$($release.ToString().ToLower())" >> $env:GITHUB_OUTPUT
 
@@ -94,22 +107,6 @@ jobs:
                   -p:IncludeNativeLibrariesForSelfExtract=true
                   -p:EnableCompressionInSingleFile=true
                   -o publish
-
-            # ---- optional Authenticode signing ----
-            - name: sign exe
-              if: steps.cfg.outputs.signed == 'true'
-              env:
-                  PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
-                  PFX_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-              run: |
-                  $pfx = "$env:RUNNER_TEMP\cert.pfx"
-                  [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
-                  $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
-                      Sort-Object FullName -Descending | Select-Object -First 1
-                  & $signtool.FullName sign /f $pfx /p $env:PFX_PASSWORD `
-                      /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
-                      publish\Blurt.exe
-                  Remove-Item $pfx -Force
 
             - name: package zip
               id: artifact
@@ -196,9 +193,9 @@ jobs:
                   # place. This is defence in depth against an *accidental* overwrite —
                   # a re-run, or a tag pushed twice — not a control on a leaked
                   # contents:write token, which can delete and re-upload through the API
-                  # without going near this workflow. What actually defends against that
-                  # is signing (the updater refusing anything not signed by us) and build
-                  # provenance.
+                  # without going near this workflow. What defends against that here is
+                  # the build provenance attestation below — and only that, since these
+                  # builds are unsigned (see the header comment and #9).
                   #
                   # Skip-if-present rather than failing on a conflict, so a re-run of a
                   # partially-completed release isn't wedged behind hand-deleting the
