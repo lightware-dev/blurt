@@ -1,0 +1,38 @@
+# Dependencies for scripts/test_protocol.py — the hand-edited source.
+#
+# This file holds the floors a human cares about. requirements-test.txt beside
+# it is generated from this one: every direct and transitive dependency pinned
+# to an exact version with its artifact hashes, so CI installs the same tree
+# every time and a re-uploaded or tampered-with wheel fails the install instead
+# of running. Edit here, then recompile:
+#
+#   uv pip compile requirements-test.in --generate-hashes --universal \
+#       --python-version 3.11 -o requirements-test.txt
+#
+# (`pip-compile --generate-hashes` from pip-tools produces the same thing.)
+#
+# --python-version must name the OLDEST version in server.yml's matrix, not
+# whatever interpreter you happen to be running. Compiled on 3.12 it pins
+# numpy 2.5.1, which requires >=3.12, and the 3.11 job then fails to install at
+# all. Targeting 3.11 makes the resolution emit both (2.4.6 below 3.12, 2.5.1
+# at or above) behind markers. Bump this when the matrix drops a version.
+#
+# Install with the hash check on, matching CI:
+#
+#   pip install --require-hashes -r requirements-test.txt
+#   python scripts/test_protocol.py
+#
+# Deliberately excludes torch, NeMo and silero-vad: the tests stub the ASR
+# engine and the VAD, so the whole suite runs on any machine (and in CI) in
+# seconds without a GPU or a multi-gigabyte model download. That is also why
+# this file could be locked while requirements.txt still can't — see the note
+# there.
+
+fastapi>=0.115.0
+uvicorn>=0.30.0
+python-multipart>=0.0.9   # multipart forms for the OpenAI-compatible /v1 API
+websockets>=13.0          # the test client for the native protocol
+numpy>=1.26.0
+soundfile>=0.12.0         # wav decoding in the OpenAI-compatible API
+httpx>=0.27.0             # HTTP/SSE client for the /v1 suite
+wyoming>=1.5.0            # official client library, for the interop suite
