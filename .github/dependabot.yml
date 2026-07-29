@@ -13,3 +13,43 @@ updates:
           actions:
               patterns:
                   - '*'
+
+    # The website. Grouped minor+patch so routine Next/wrangler drift is one PR;
+    # majors arrive individually because those are the ones that need reading.
+    #
+    # Watch the `overrides` block in www/package.json when reviewing these: it
+    # pins postcss and sharp above what next ships, and a next bump that finally
+    # carries the patched versions is the signal to drop the entry rather than
+    # to keep overriding. brace-expansion is deliberately left un-overridden
+    # there — see the note in package.json before "fixing" it.
+    - package-ecosystem: npm
+      directory: /www
+      schedule:
+          interval: weekly
+      open-pull-requests-limit: 3
+      groups:
+          www-minor-and-patch:
+              update-types:
+                  - minor
+                  - patch
+
+    # The Windows client (clients/windows/Blurt.csproj).
+    - package-ecosystem: nuget
+      directory: /clients/windows
+      schedule:
+          interval: weekly
+      open-pull-requests-limit: 3
+      groups:
+          windows-minor-and-patch:
+              update-types:
+                  - minor
+                  - patch
+
+# Deliberately absent:
+#
+#   pip — requirements.txt carries `>=` floors, so there is no pinned version
+#   for Dependabot to bump and a pip entry would just sit there doing nothing.
+#   Locking the Python deps is the prerequisite; see #10, and add the entry in
+#   the same change that lands the lockfile.
+#
+#   swift — Dependabot has no Swift/SPM support, so clients/mac is unmanaged.
