@@ -1,0 +1,34 @@
+# Parakeet dictation server (local, GPU) — the hand-edited source.
+#
+# requirements.txt beside it is generated from this file: every dependency
+# pinned to an exact version with its artifact hashes, so `docker build` today
+# and next month install the same tree, and a compromised upstream release
+# fails the hash check instead of landing silently. Edit here, then run:
+#
+#   ./scripts/lock-requirements.sh
+#
+# ---- why torch is pinned here but excluded from the lock ----
+#
+# The Dockerfile installs torch from the PyTorch cu130 index *before* this file,
+# because those wheels bundle the CUDA + cuDNN runtime. It must not be installed
+# again from PyPI, which would clobber the cu130 build with a generic one — so
+# torch, triton and the nvidia-* runtime packages that come with it are resolved
+# (to keep the rest of the tree consistent with them) and then omitted from the
+# output. See scripts/lock-requirements.sh for the exclusion list.
+#
+# The pin below exists purely so the resolver knows which torch will be present.
+# Without it the resolution drifts to whatever PyPI's newest torch is — 2.13.0
+# at the time of writing — and pins everything else against a torch the image
+# never installs. Keep this in lockstep with the Dockerfile's cu130 install.
+torch==2.12.1
+
+fastapi>=0.115.0
+python-multipart>=0.0.9   # multipart forms for the OpenAI-compatible /v1 API
+uvicorn>=0.30.0
+websockets>=13.0
+nemo_toolkit[asr]>=2.0.0
+silero-vad>=5.1
+soundfile>=0.12.0
+librosa>=0.10.0
+numpy>=1.26.0
+python-dotenv>=1.0.0

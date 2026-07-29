@@ -45,11 +45,33 @@ updates:
                   - minor
                   - patch
 
+    # The server. Both requirements.txt and requirements-test.txt are now fully
+    # pinned with hashes, so there is something concrete for Dependabot to bump.
+    #
+    # Read the first PR from this entry carefully rather than merging on green.
+    # Both lockfiles are generated (requirements.in + scripts/lock-requirements.sh)
+    # and carry a `uv pip compile` header; Dependabot's pip-compile support keys
+    # off the pip-tools header, so it may well edit requirements.txt directly
+    # instead of regenerating it. If it does, the file drifts from its source and
+    # the right move is to close the PR and re-run the script by hand.
+    #
+    # It must also never bump torch: the pin in requirements.in only tells the
+    # resolver which torch the cu130 step installs, and moving it here without
+    # moving the Dockerfile would pin the whole tree against a torch that is
+    # never present.
+    - package-ecosystem: pip
+      directory: /
+      schedule:
+          interval: weekly
+      open-pull-requests-limit: 3
+      ignore:
+          - dependency-name: torch
+      groups:
+          server-minor-and-patch:
+              update-types:
+                  - minor
+                  - patch
+
 # Deliberately absent:
-#
-#   pip — requirements.txt carries `>=` floors, so there is no pinned version
-#   for Dependabot to bump and a pip entry would just sit there doing nothing.
-#   Locking the Python deps is the prerequisite; see #10, and add the entry in
-#   the same change that lands the lockfile.
 #
 #   swift — Dependabot has no Swift/SPM support, so clients/mac is unmanaged.
