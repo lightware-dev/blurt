@@ -5,11 +5,23 @@ name: Deploy website
 # something under www/ (or this workflow) changed, so server/client-only pushes
 # don't trigger a redeploy. Also runnable on demand via the Actions tab.
 #
-# Requires two repo secrets:
+# Pull requests run the same build and stop short of deploying, so a change to
+# the site or its toolchain is executed at least once before the run that ships
+# it. Without that, the *first* execution of any change here is the one that
+# reaches production — which nearly happened with the setup-node v5 -> v7 bump
+# in #12: every check on that PR was green and none of them had run this job.
+#
+# Requires two repo secrets, used only by the deploy step:
 #   CLOUDFLARE_API_TOKEN   — token with the "Edit Cloudflare Workers" permission
 #   CLOUDFLARE_ACCOUNT_ID  — the account the Worker lives in
 # wrangler (invoked by `opennextjs-cloudflare deploy`) reads both from the env.
+# The build needs neither, so the PR job runs without secrets — which is also
+# the right posture for PRs from forks.
 on:
+    pull_request:
+        paths:
+            - 'www/**'
+            - '.github/workflows/www.yml'
     push:
         branches:
             - main
@@ -19,14 +31,17 @@ on:
     workflow_dispatch:
 
 # Never let two deploys race; cancel an in-flight run if a newer commit lands.
+# Keyed by ref so a PR build can't cancel the deploy of a commit on main.
 concurrency:
-    group: deploy-www
+    group: deploy-www-${{ github.ref }}
     cancel-in-progress: true
 
 jobs:
     deploy-www:
         runs-on: ubuntu-latest
-        name: Build & deploy to Cloudflare
+        # Stable name: it's the same job either way, and a check name that
+        # changed per event would be useless as a required status check (#21).
+        name: Build website (deploys to Cloudflare on main)
         defaults:
             run:
                 working-directory: www
@@ -44,8 +59,15 @@ jobs:
             - name: install deps
               run: npm ci
 
-            - name: build & deploy
-              run: npm run deploy
+            # Split from the deploy so a PR exercises the identical build. No
+            # Cloudflare credentials here: `opennextjs-cloudflare build` doesn't
+            # read them (verified by running it with both unset).
+            - name: build
+              run: npm run build:worker
+
+            - name: deploy
+              if: github.event_name != 'pull_request'
+              run: npx opennextjs-cloudflare deploy
               env:
                   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
