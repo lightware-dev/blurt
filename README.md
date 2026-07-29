@@ -150,10 +150,31 @@ mkdir: cannot create directory '/home/blurt/.cache/blurt-certs': Permission deni
 ```
 
 Either start with a fresh volume and re-download the model, or keep the
-download by handing the old one over once:
+download by handing the old one over once.
+
+**Check the volume's real name first.** Compose prefixes volumes with the
+project name, so `docker compose` creates `blurt_blurt-cache`, not
+`blurt-cache` — and `docker run -v` against a name that doesn't exist
+*silently creates an empty volume* rather than failing, so chowning the wrong
+one looks like it worked and changes nothing:
 
 ```bash
-docker run --rm -v blurt-cache:/c alpine chown -R 10001:10001 /c
+docker volume ls | grep blurt-cache
+```
+
+Then hand over whichever name that printed:
+
+```bash
+docker run --rm -v blurt_blurt-cache:/c alpine chown -R 10001:10001 /c   # docker compose
+docker run --rm -v blurt-cache:/c alpine chown -R 10001:10001 /c         # docker run -v
+```
+
+Confirm it took — the daemon runs as uid 10001, so that's what the files
+should be owned by:
+
+```bash
+docker compose up --build -d
+docker exec blurtd id     # uid=10001(blurt) gid=10001(blurt)
 ```
 
 **TLS is automatic.** Browsers block LAN mic access over plain `ws://`, so the
