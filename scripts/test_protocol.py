@@ -479,6 +479,65 @@ async def suite_wyoming(app):
 
 # ---- OpenAI-compatible API ----------------------------------------------
 
+async def raw_upload(port: int, body: bytes, chunked: bool = False,
+                     declared: int | None = None):
+    """POST to /v1/audio/transcriptions over a raw socket, so the framing can
+    lie in ways httpx won't. Returns (status_code_or_None, bytes_actually_sent).
+
+    Reads concurrently with writing: the server answers (and may reset) long
+    before a big body finishes going out, and a write-then-read would deadlock
+    or lose the response.
+    """
+    boundary = "----blurttest"
+    part = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+            f"filename=\"a.wav\"\r\nContent-Type: audio/wav\r\n\r\n").encode()
+    framing = ("Transfer-Encoding: chunked" if chunked
+               else f"Content-Length: {len(part) + len(body) if declared is None else declared}")
+    head = (f"POST /v1/audio/transcriptions HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            f"Content-Type: multipart/form-data; boundary={boundary}\r\n"
+            f"{framing}\r\n\r\n").encode()
+
+    if chunked:
+        payload = [b"%x\r\n" % len(part) + part + b"\r\n"]
+        for off in range(0, len(body), 65536):
+            piece = body[off:off + 65536]
+            payload.append(b"%x\r\n" % len(piece) + piece + b"\r\n")
+        payload.append(b"0\r\n\r\n")
+    else:
+        payload = [part] + [body[off:off + 65536] for off in range(0, len(body), 65536)]
+
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    resp = b""
+    sent = 0
+
+    async def read_resp():
+        nonlocal resp
+        with contextlib.suppress(Exception):
+            resp = await reader.read(400)
+
+    rt = asyncio.create_task(read_resp())
+    try:
+        writer.write(head)
+        await writer.drain()
+        for piece in payload:
+            writer.write(piece)
+            await writer.drain()
+            sent += len(piece)
+    except Exception:
+        pass  # the server resetting mid-upload is one of the outcomes under test
+    with contextlib.suppress(Exception):
+        await asyncio.wait_for(rt, timeout=15)
+    rt.cancel()
+    with contextlib.suppress(Exception):
+        writer.close()
+
+    status = None
+    if resp.startswith(b"HTTP/1.1 "):
+        with contextlib.suppress(ValueError):
+            status = int(resp[9:12])
+    return status, sent
+
+
 async def suite_openai(app):
     try:
         import httpx
@@ -544,6 +603,24 @@ async def suite_openai(app):
                                                  "audio/wav")})
                 check("oversized upload -> 413", r.status_code == 413,
                       detail=str(r.status_code))
+
+                # A chunked body carries no Content-Length, so the size check
+                # used to short-circuit and let an unauthenticated client
+                # stream an unbounded upload to disk. httpx can't be made to
+                # send one against a known length, so this goes over a raw
+                # socket.
+                status, _ = await raw_upload(HTTP_PORT, chunked=True,
+                                             body=b"C" * (3 * 1024 * 1024))
+                check("chunked upload -> 411", status == 411, detail=str(status))
+
+                # A declared Content-Length is a claim — but it's a claim the
+                # HTTP framing layer enforces, so a client that under-declares
+                # can't spool more than it declared past the check above.
+                status, sent = await raw_upload(HTTP_PORT, declared=1000,
+                                                body=b"D" * (3 * 1024 * 1024))
+                check("under-declared Content-Length is not honoured",
+                      status is not None and status >= 400,
+                      detail=f"status={status} sent={sent}")
             finally:
                 oa.MAX_UPLOAD_MB = original_cap
 
