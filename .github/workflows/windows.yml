@@ -135,17 +135,40 @@ jobs:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               working-directory: clients/windows
               run: |
+                  # pwsh does not stop on a native command's non-zero exit by
+                  # default, which is how a failed `gh release create` used to be
+                  # swallowed here — the job carried on and went green while the
+                  # macOS job died on the identical failure. Stop on both.
+                  $ErrorActionPreference = 'Stop'
+                  $PSNativeCommandUseErrorActionPreference = $true
+
                   $zip = "dist/Blurt-${{ steps.ver.outputs.version }}-Windows.zip"
                   # A stable, version-less copy so the website can link a fixed URL:
                   #   https://github.com/${{ github.repository }}/releases/latest/download/Blurt-Windows.zip
                   Copy-Item $zip "dist/Blurt-Windows.zip"
+
                   # The macOS and Windows workflows target the same v* tag + release,
                   # so creation must be idempotent — whichever job runs second just
                   # uploads its assets to the already-created release.
-                  gh release view "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" 2>$null
-                  if ($LASTEXITCODE -ne 0) {
+                  #
+                  # Check-then-create is NOT idempotent: both jobs start on the same
+                  # tag push, both see no release, both call create, and one gets a
+                  # 422. Attempt creation instead, and treat "it exists now" as
+                  # success regardless of which platform won the race.
+                  try {
                       gh release create "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" `
                           --title "Blurt $env:GITHUB_REF_NAME" --generate-notes
+                  } catch {
+                      $exists = $false
+                      try {
+                          gh release view "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" | Out-Null
+                          $exists = $true
+                      } catch { }
+                      if ($exists) {
+                          Write-Output "::notice::release $env:GITHUB_REF_NAME already exists — the macOS job created it first"
+                      } else {
+                          Write-Error "could not create release $env:GITHUB_REF_NAME, and it does not exist"
+                      }
                   }
                   # Deliberately no --clobber: a published asset is never replaced in
                   # place. This is defence in depth against an *accidental* overwrite —
@@ -167,7 +190,9 @@ jobs:
                       if ($published -contains $name) {
                           Write-Output "::notice::$name is already published — leaving it untouched"
                       } else {
+                          # No explicit $LASTEXITCODE check: with
+                          # $PSNativeCommandUseErrorActionPreference set above, a
+                          # non-zero exit from gh throws and fails the step.
                           gh release upload "$env:GITHUB_REF_NAME" $f --repo "$env:GITHUB_REPOSITORY"
-                          if ($LASTEXITCODE -ne 0) { Write-Error "upload of $name failed"; exit 1 }
                       }
                   }
