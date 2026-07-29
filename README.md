@@ -262,6 +262,15 @@ https://github.com/lightware-dev/blurt/releases/latest/download/Blurt-macOS.zip
 Unzip, drag **Blurt.app** to `/Applications`, and open it — it's a universal
 (Apple Silicon + Intel) menu-bar app that launches without Gatekeeper warnings.
 
+Releases carry a signed [build provenance
+attestation](https://docs.github.com/actions/security-guides/using-artifact-attestations)
+binding the download to the workflow run and commit that built it — notarization
+proves Apple saw the binary, not which source tree it came from. To check:
+
+```bash
+gh attestation verify Blurt-macOS.zip --repo lightware-dev/blurt
+```
+
 ### Build from source
 
 Built on the Mac (needs Xcode command-line tools):
@@ -283,12 +292,22 @@ Settings). See `clients/mac/README.md` for details
 ## Windows client
 
 A native .NET 8 / WPF tray app — the Windows twin of the Mac client, same server
-protocol and behaviour. Grab the latest signed build from the
+protocol and behaviour. Grab the latest build from the
 [**Releases page**](https://github.com/lightware-dev/blurt/releases/latest), or the
 stable URL:
 
 ```
 https://github.com/lightware-dev/blurt/releases/latest/download/Blurt-Windows.zip
+```
+
+Windows builds are **not** Authenticode-signed, so SmartScreen warns on first
+launch — choose *More info* → *Run anyway*. They do carry a signed [build
+provenance attestation](https://docs.github.com/actions/security-guides/using-artifact-attestations),
+which is currently the only cryptographic link between the zip and this
+repository:
+
+```bash
+gh attestation verify Blurt-Windows.zip --repo lightware-dev/blurt
 ```
 
 Build from source (needs the .NET 8 SDK):
