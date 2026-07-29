@@ -18,7 +18,7 @@ services:
     volumes:
       # Persists HuggingFace/NeMo model downloads *and* the auto-generated
       # self-signed TLS cert across restarts.
-      - blurt-cache:/root/.cache
+      - blurt-cache:/home/blurt/.cache
       # Serves wss:// out of the box via an auto-generated cert. Mount your own
       # here to override it (see scripts/gen_certs.sh):
       # - ./certs:/app/certs:ro

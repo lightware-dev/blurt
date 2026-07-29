@@ -10,6 +10,7 @@ Examples:
 
 import os
 import argparse
+from pathlib import Path
 
 import uvicorn
 
@@ -47,8 +48,12 @@ def main():
     if not args.no_preload:
         asr.load()  # pay the load once, up front
 
-    cert = app_module.ROOT / "certs" / "cert.pem"
-    key = app_module.ROOT / "certs" / "key.pem"
+    # certs/ next to the source tree by default. BLURT_CERT_DIR moves it, which
+    # is what the container uses: it runs unprivileged and /app is read-only to
+    # it, so the auto-generated pair has to live on the cache volume instead.
+    cert_dir = Path(os.getenv("BLURT_CERT_DIR") or (app_module.ROOT / "certs"))
+    cert = cert_dir / "cert.pem"
+    key = cert_dir / "key.pem"
     kwargs = {"host": args.host, "port": args.port, "log_level": "info"}
     if cert.exists() and key.exists():
         kwargs["ssl_certfile"] = str(cert)

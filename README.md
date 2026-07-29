@@ -40,7 +40,7 @@ NVIDIA GPU box, and a **client** on the Mac or Windows machine you dictate from.
 
 ```bash
 docker build -t blurtd .
-docker run --gpus all -p 25878:25878 -v blurt-cache:/root/.cache blurtd
+docker run --gpus all -p 25878:25878 -v blurt-cache:/home/blurt/.cache blurtd
 ```
 
 or from source:
@@ -106,8 +106,9 @@ fp32 copy is ever fetched or materialised. If no cache and no download are avail
 it fails fast rather than falling back to the fp32 checkpoint. Pre-build the cache
 offline with `python scripts/build_bf16_ckpt.py`.
 
-Serves `wss://<ip>:25878/ws` when `certs/cert.pem` + `certs/key.pem` exist,
-otherwise plain `ws://`. The `certs/` dir is git-ignored and generated per
+Serves `wss://<ip>:25878/ws` when `certs/cert.pem` + `certs/key.pem` exist
+(`BLURT_CERT_DIR` moves that directory — the container uses it to keep the cert
+on its cache volume), otherwise plain `ws://`. The `certs/` dir is git-ignored and generated per
 machine — run `scripts/gen_certs.sh` to mint a self-signed pair for your LAN
 (browsers require TLS for mic access; the Mac and Windows clients trust it after
 a one-time prompt). Open `https://<ip>:25878/` for a **browser mic test page**.
@@ -115,7 +116,7 @@ The default port **`25878`** is a mnemonic — `2-5-8-7-8` spells **BLURT** on a
 keypad (B→2, L→5, U→8, R→7, T→8). Override it with `--port` or `PORT`.
 
 Config (env or `.env`, all optional): `PARAKEET_BF16_CKPT`, `PARAKEET_BF16_REPO`,
-`HOST`, `PORT`, `AUTH_TOKEN`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
+`HOST`, `PORT`, `AUTH_TOKEN`, `BLURT_CERT_DIR`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
 `VAD_THRESHOLD`, `VAD_PREROLL_MS`, `VAD_HANGOVER_MS`, `LOG_STATS`. See `.env.example`.
 `LOG_STATS` (default on) logs per-dictation metadata — packet count, bytes,
 audio duration, segments — never transcript text; set `LOG_STATS=0` to silence it.
@@ -130,14 +131,30 @@ injects your host driver at run time (`--gpus all`).
 
 ```bash
 docker build -t blurtd .
-docker run --gpus all -p 25878:25878 -v blurt-cache:/root/.cache blurtd
+docker run --gpus all -p 25878:25878 -v blurt-cache:/home/blurt/.cache blurtd
 #   append flags like a bare invocation:  docker run … blurtd --port 8000
 # or:
 docker compose up --build
 ```
 
-Models are pulled from HuggingFace on first run into `/root/.cache` — the
+Models are pulled from HuggingFace on first run into `/home/blurt/.cache` — the
 `blurt-cache` volume above persists them so you don't re-download on restart.
+
+The daemon runs as the unprivileged `blurt` user (uid 10001) rather than root.
+If you carry a `blurt-cache` volume over from a build that mounted it at
+`/root/.cache`, its contents are root-owned and the container stops on start
+with:
+
+```
+mkdir: cannot create directory '/home/blurt/.cache/blurt-certs': Permission denied
+```
+
+Either start with a fresh volume and re-download the model, or keep the
+download by handing the old one over once:
+
+```bash
+docker run --rm -v blurt-cache:/c alpine chown -R 10001:10001 /c
+```
 
 **TLS is automatic.** Browsers block LAN mic access over plain `ws://`, so the
 entrypoint auto-generates a self-signed cert on first start and serves `wss://`
