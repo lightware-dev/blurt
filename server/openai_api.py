@@ -82,8 +82,19 @@ async def limit_upload_size(request: Request, call_next):
     """
     if request.url.path.startswith("/v1/audio/") and MAX_UPLOAD_MB > 0:
         declared = request.headers.get("content-length")
+        if declared is None:
+            # No Content-Length means a chunked body, and a chunked body has no
+            # declared size to check — so this used to fall straight through and
+            # spool an unbounded upload to disk, unauthenticated, which is the
+            # exact thing this middleware exists to stop. Refuse it instead.
+            #
+            # Safe for the actual client population: the OpenAI SDKs and
+            # `curl -F` both send Content-Length. A client that insists on
+            # streaming has to buffer and declare a length.
+            return _error(411, "Content-Length required on uploads "
+                               "(chunked transfer encoding is not accepted here).")
         try:
-            if declared is not None and int(declared) > MAX_UPLOAD_MB * 1024 * 1024:
+            if int(declared) > MAX_UPLOAD_MB * 1024 * 1024:
                 return _error(413, f"File too large (limit {MAX_UPLOAD_MB:.0f} MB).")
         except ValueError:
             return _error(400, "Invalid Content-Length.")
