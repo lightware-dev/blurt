@@ -176,9 +176,22 @@ jobs:
                   # The macOS and Windows workflows target the same v* tag + release,
                   # so creation must be idempotent — whichever job runs second just
                   # uploads its assets to the already-created release.
-                  gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-                      || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-                             --title "Blurt $GITHUB_REF_NAME" --generate-notes
+                  #
+                  # Check-then-create is NOT idempotent: both jobs start on the same
+                  # tag push, both see no release, both call create, and one gets a
+                  # 422. Under `set -e` that killed this job before it uploaded, while
+                  # pwsh silently ignored it on the Windows side — same race, red mac,
+                  # green windows. So: attempt creation, and treat "it exists now" as
+                  # success regardless of who won.
+                  if ! gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                          --title "Blurt $GITHUB_REF_NAME" --generate-notes; then
+                      if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                          echo "::notice::release $GITHUB_REF_NAME already exists — the Windows job created it first"
+                      else
+                          echo "::error::could not create release $GITHUB_REF_NAME, and it does not exist" >&2
+                          exit 1
+                      fi
+                  fi
                   # Deliberately no --clobber: a published asset is never replaced in
                   # place. This is defence in depth against an *accidental* overwrite —
                   # a re-run, or a tag pushed twice — not a control on a leaked
