@@ -32,6 +32,7 @@ import io
 import os
 import json
 import asyncio
+import traceback
 import subprocess
 
 import numpy as np
@@ -58,6 +59,18 @@ def _error(status: int, message: str, err_type: str = "invalid_request_error") -
     return JSONResponse(status_code=status,
                         content={"error": {"message": message, "type": err_type,
                                            "param": None, "code": None}})
+
+
+def _log_exc(what: str) -> None:
+    """Print the current exception server-side, where it is useful.
+
+    Deliberately not gated on LOG_STATS: that flag silences routine
+    per-dictation metadata, and a failed transcription is not routine — an
+    operator running with stats off still needs to see a CUDA OOM or a missing
+    checkpoint. It doesn't weaken the SECURITY.md promise either, since what is
+    printed is the exception, never transcribed text.
+    """
+    print(f"[blurtd] error: {what}\n{traceback.format_exc()}", end="", flush=True)
 
 
 def _check_auth(request: Request) -> JSONResponse | None:
@@ -231,8 +244,14 @@ async def transcriptions(
         return _error(400, "Empty file.")
     try:
         audio = await asyncio.to_thread(_decode_audio, data)
-    except ValueError as e:
-        return _error(400, str(e))
+    except ValueError:
+        # Also a fixed message, though this one is our own text rather than a
+        # library's: the ffmpeg branch folds the last line of ffmpeg's stderr
+        # into the ValueError, which is the sort of internal detail that has no
+        # business crossing the wire. It is still in the log, where whoever
+        # runs the box can read it.
+        _log_exc("upload could not be decoded")
+        return _error(400, "Could not decode audio (unsupported or corrupt file).")
     if len(audio) == 0:
         return _error(400, "File contains no audio.")
     duration = len(audio) / SR
@@ -252,14 +271,20 @@ async def transcriptions(
                     parts.append(text)
                     yield "data: " + json.dumps(
                         {"type": "transcript.text.delta", "delta": delta}) + "\n\n"
-            except Exception as e:
+            except Exception:
                 # The 200 and the headers went out before the first decode, so
                 # there is no status code left to fail with. Say so in-band and
                 # still terminate the stream — otherwise SDK parsers block
                 # until the socket times out.
+                #
+                # Same fixed message as the non-stream path: the exception text
+                # comes from NeMo/PyTorch and can carry checkpoint paths and
+                # driver detail. It goes to the log instead.
+                _log_exc("streaming transcription failed")
                 yield "data: " + json.dumps(
                     {"type": "error",
-                     "error": {"message": str(e), "type": "server_error"}}) + "\n\n"
+                     "error": {"message": "Transcription failed.",
+                               "type": "server_error"}}) + "\n\n"
             else:
                 yield "data: " + json.dumps(
                     {"type": "transcript.text.done", "text": " ".join(parts)}) + "\n\n"
@@ -282,10 +307,16 @@ async def transcriptions(
             text = await asyncio.to_thread(asr.transcribe, audio)
             await asyncio.to_thread(asr.release_cache)
             segments = [(0.0, duration, text)] if text else []
-    except Exception as e:
+    except Exception:
         # A decode failure (CUDA OOM, no bf16 GPU) is the server's fault, and
         # belongs in the OpenAI error shape rather than a bare 500 traceback.
-        return _error(500, f"Transcription failed: {e}", "server_error")
+        # The cause is logged, not returned: AUTH_TOKEN is empty by default and
+        # the daemon binds 0.0.0.0, so on a stock install anyone who can reach
+        # the port can trigger this — and the exception text comes from NeMo /
+        # PyTorch, which happily names the checkpoint path under ~/.cache/blurt
+        # and the GPU it failed on.
+        _log_exc("transcription failed")
+        return _error(500, "Transcription failed.", "server_error")
 
     if response_format == "text":
         return PlainTextResponse(text)
