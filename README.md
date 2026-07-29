@@ -40,7 +40,7 @@ NVIDIA GPU box, and a **client** on the Mac or Windows machine you dictate from.
 
 ```bash
 docker build -t blurtd .
-docker run --gpus all -p 25878:25878 -v blurt-cache:/home/blurt/.cache blurtd
+docker run --gpus all -p 25878:25878 -v blurtd-cache:/home/blurt/.cache blurtd
 ```
 
 or from source:
@@ -131,56 +131,62 @@ injects your host driver at run time (`--gpus all`).
 
 ```bash
 docker build -t blurtd .
-docker run --gpus all -p 25878:25878 -v blurt-cache:/home/blurt/.cache blurtd
+docker run --gpus all -p 25878:25878 -v blurtd-cache:/home/blurt/.cache blurtd
 #   append flags like a bare invocation:  docker run … blurtd --port 8000
 # or:
 docker compose up --build
 ```
 
 Models are pulled from HuggingFace on first run into `/home/blurt/.cache` — the
-`blurt-cache` volume above persists them so you don't re-download on restart.
+`blurtd-cache` volume above persists them so you don't re-download on restart.
 
 The daemon runs as the unprivileged `blurt` user (uid 10001) rather than root.
-If you carry a `blurt-cache` volume over from a build that mounted it at
-`/root/.cache`, its contents are root-owned and the container stops on start
-with:
+The Compose volume carries an explicit `name:`, so it is `blurtd-cache` under
+both `docker compose` and `docker run` — Compose would otherwise prefix it with
+the checkout directory's name and the two would disagree.
+
+### Upgrading from an image older than the non-root change
+
+Two things moved at once: the mount point (`/root/.cache` → `/home/blurt/.cache`)
+and the volume name (`blurt-cache`, or `<dir>_blurt-cache` under Compose →
+`blurtd-cache`). The old volume's contents are also root-owned, so the container
+stops on start with:
 
 ```
 mkdir: cannot create directory '/home/blurt/.cache/blurt-certs': Permission denied
 ```
 
-Either start with a fresh volume and re-download the model, or keep the
-download by handing the old one over once.
-
-**Check the volume's real name first.** Compose prefixes volumes with the
-project name, so `docker compose` creates `blurt_blurt-cache`, not
-`blurt-cache` — and `docker run -v` against a name that doesn't exist
-*silently creates an empty volume* rather than failing, so chowning the wrong
-one looks like it worked and changes nothing:
+Start fresh and re-download the model, or carry the old cache across in one
+step. Find the old volume first — `docker run -v` against a name that doesn't
+exist *silently creates an empty volume* instead of failing, so copying from the
+wrong name looks like it worked and gets you nothing:
 
 ```bash
-docker volume ls | grep blurt-cache
+docker volume ls | grep cache
 ```
 
-Then hand over whichever name that printed:
+Then copy it into the new one, taking ownership as you go:
 
 ```bash
-docker run --rm -v blurt_blurt-cache:/c alpine chown -R 10001:10001 /c   # docker compose
-docker run --rm -v blurt-cache:/c alpine chown -R 10001:10001 /c         # docker run -v
+docker run --rm -v <old-volume>:/from:ro -v blurtd-cache:/to alpine \
+    sh -c 'cp -a /from/. /to/ && chown 10001:10001 /to'
 ```
 
-Confirm it took — the daemon runs as uid 10001, so that's what the files
-should be owned by:
+Bring it up and confirm — the daemon should be uid 10001, and the model should
+load from the cache rather than downloading again:
 
 ```bash
 docker compose up --build -d
 docker exec blurtd id     # uid=10001(blurt) gid=10001(blurt)
 ```
 
+Keeping the old cache also preserves the auto-generated TLS cert, so browsers
+and clients won't re-prompt. Once you're happy, `docker volume rm <old-volume>`.
+
 **TLS is automatic.** Browsers block LAN mic access over plain `ws://`, so the
 entrypoint auto-generates a self-signed cert on first start and serves `wss://`
 out of the box (the Mac client trusts it; a browser prompts once). The cert also
-lives in `blurt-cache`, so its fingerprint is stable across restarts. Bring your
+lives in `blurtd-cache`, so its fingerprint is stable across restarts. Bring your
 own by mounting `-v ./certs:/app/certs:ro`, or set `BLURT_AUTOCERT=0` to fall
 back to `ws://`. Full smoke test once it's up: `python scripts/ws_client_test.py
 audio/clean.wav`.

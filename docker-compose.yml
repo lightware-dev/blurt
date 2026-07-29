@@ -18,7 +18,7 @@ services:
     volumes:
       # Persists HuggingFace/NeMo model downloads *and* the auto-generated
       # self-signed TLS cert across restarts.
-      - blurt-cache:/home/blurt/.cache
+      - blurtd-cache:/home/blurt/.cache
       # Serves wss:// out of the box via an auto-generated cert. Mount your own
       # here to override it (see scripts/gen_certs.sh):
       # - ./certs:/app/certs:ro
@@ -53,4 +53,10 @@ services:
     restart: unless-stopped
 
 volumes:
-  blurt-cache:
+  blurtd-cache:
+    # Pinned so Compose uses this exact name instead of prefixing it with the
+    # project (which would make it "<dir>_blurtd-cache", i.e. a different name
+    # depending on what the checkout directory is called). Matching the name
+    # here to the one in the `docker run` examples means the docs can give one
+    # volume name that is true either way — the mismatch cost an evening once.
+    name: blurtd-cache
