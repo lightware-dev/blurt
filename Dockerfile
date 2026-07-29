@@ -5,10 +5,15 @@
 # run time. Requires `--gpus all` and a driver that supports CUDA 13 (>= 580).
 #
 #   docker build -t blurtd .
-#   docker run --gpus all -p 25878:25878 -v blurt-cache:/root/.cache blurtd
+#   docker run --gpus all -p 25878:25878 -v blurt-cache:/home/blurt/.cache blurtd
 #
-# Models are pulled from HuggingFace on first run into /root/.cache — mount a
-# volume there (as above) so you don't re-download on every container start.
+# Models are pulled from HuggingFace on first run into /home/blurt/.cache —
+# mount a volume there (as above) so you don't re-download on every start.
+#
+# The daemon runs as the unprivileged `blurt` user (uid 10001), not root: it
+# binds a high port and needs no capability at run time, and the listeners are
+# reachable from the LAN without auth by default, so a bug in the audio decode
+# path (ffmpeg, libsndfile, soundfile) should not start out as uid 0.
 FROM python:3.12-slim-bookworm
 
 # Runtime libs: ffmpeg + libsndfile for audio I/O (soundfile/librosa),
@@ -52,9 +57,27 @@ COPY blurtd ./blurtd
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-ENV HOST=0.0.0.0 \
+# The unprivileged runtime user. Created after the heavy pip layers so those
+# stay cached, and given a fixed uid so a host-side `chown` on the cache volume
+# is reproducible. /app stays root-owned and read-only to the daemon — code
+# execution in the decode path shouldn't be able to rewrite the code it runs
+# from — which is why the auto-generated cert goes on the cache volume instead
+# of into /app/certs, with the entrypoint pointing BLURT_CERT_DIR at it.
+#
+# /app/certs is still created, empty: it's the documented mount point for your
+# own certs (`-v ./certs:/app/certs:ro`), and the entrypoint prefers it when it
+# holds a pair. It is deliberately NOT a symlink into the cache — Docker
+# resolves a symlinked mount point and mounts at its target, where the cache
+# volume then shadows it, so a user's mounted certs are silently ignored.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin blurt \
+    && mkdir -p /home/blurt/.cache/blurt-certs /app/certs \
+    && chown -R blurt:blurt /home/blurt
+
+ENV HOME=/home/blurt \
+    BLURT_CACHE=/home/blurt/.cache \
+    HOST=0.0.0.0 \
     PORT=25878 \
-    HF_HOME=/root/.cache/huggingface
+    HF_HOME=/home/blurt/.cache/huggingface
 
 # Host-RAM tuning. This is a GPU inference server: the real work runs on the
 # device and the process sits near-idle on CPU, yet torch/OpenMP/MKL/numba spin
@@ -88,6 +111,8 @@ ENV MALLOC_ARENA_MAX=2 \
 # by default; this just means `docker inspect` and `docker run -P` know the port
 # exists.
 EXPOSE 25878 10300
+
+USER blurt
 
 # The entrypoint mints a TLS cert if needed, then runs `python -m server`.
 # Append daemon flags as CMD, e.g.  docker run ... blurtd --port 8000
