@@ -30,6 +30,8 @@ jobs:
         name: Build & package Blurt (release)
         permissions:
             contents: write # needed to publish a GitHub Release on tag pushes
+            id-token: write # OIDC token the attestation is signed against
+            attestations: write # write the SLSA provenance statement
         steps:
             - name: checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -149,6 +151,31 @@ jobs:
                   ZIP="$(ls clients/mac/dist/*.zip | head -1)"
                   echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
                   echo "name=$(basename "${ZIP%.zip}")-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+            # Binds this artifact's digest to the repo, workflow and commit that
+            # produced it. Notarization proves Apple saw the binary and that it
+            # carries our Developer ID; it says nothing about which source tree it
+            # was built from, and a checksum only proves the file didn't change in
+            # transit. Consumers verify with:
+            #   gh attestation verify Blurt-macOS.zip --repo lightware-dev/blurt
+            #
+            # Only on release tags: attestation is about what we publish, and a PR
+            # build isn't published. The version-less Blurt-macOS.zip copy needs no
+            # separate attestation — it's byte-identical, and attestations are keyed
+            # by digest rather than by filename.
+            #
+            # Caveat worth knowing: this attests the bytes *this run* built. On a
+            # re-run where the release already carries an earlier attempt's asset,
+            # the upload step deliberately leaves the published file untouched (see
+            # below) and a macOS rebuild is never byte-identical — fresh codesign
+            # timestamp, new notarization ticket. The attestation would then cover a
+            # digest that isn't the published one. Same failure mode the cask bump
+            # already guards against; if it bites, delete the asset and re-run clean.
+            - name: attest build provenance
+              if: steps.cfg.outputs.release == 'true'
+              uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+              with:
+                  subject-path: ${{ steps.artifact.outputs.zip }}
 
             - name: clean up signing keychain
               if: always() && steps.cfg.outputs.signed == 'true'

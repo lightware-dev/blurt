@@ -30,6 +30,8 @@ jobs:
         name: Build & package Blurt (release)
         permissions:
             contents: write # needed to publish a GitHub Release on tag pushes
+            id-token: write # OIDC token the attestation is signed against
+            attestations: write # write the SLSA provenance statement
         defaults:
             run:
                 shell: pwsh
@@ -119,6 +121,26 @@ jobs:
                   "zip=clients/windows/$zip" >> $env:GITHUB_OUTPUT
                   $sha = "$env:GITHUB_SHA".Substring(0,7)
                   "name=Blurt-$ver-Windows-$sha" >> $env:GITHUB_OUTPUT
+
+            # Binds this artifact's digest to the repo, workflow and commit that
+            # produced it:
+            #   gh attestation verify Blurt-Windows.zip --repo lightware-dev/blurt
+            #
+            # Carries more weight here than on macOS, because Windows releases are
+            # unsigned (#9) — this is currently the only cryptographic link between
+            # a downloaded zip and this repository. It is not a substitute for
+            # signing: it defends a release asset replaced *without* a code push,
+            # not an attacker with repo write access, who can push a tag and have CI
+            # attest their payload just as readily.
+            #
+            # Release tags only; a PR build isn't published. The version-less
+            # Blurt-Windows.zip copy is byte-identical and attestations are keyed by
+            # digest, so one statement covers both.
+            - name: attest build provenance
+              if: steps.cfg.outputs.release == 'true'
+              uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+              with:
+                  subject-path: ${{ steps.artifact.outputs.zip }}
 
             - name: upload artifact
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
