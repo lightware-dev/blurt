@@ -7,9 +7,15 @@
 # of running. Edit here, then recompile:
 #
 #   uv pip compile requirements-test.in --generate-hashes --universal \
-#       -o requirements-test.txt
+#       --python-version 3.11 -o requirements-test.txt
 #
 # (`pip-compile --generate-hashes` from pip-tools produces the same thing.)
+#
+# --python-version must name the OLDEST version in server.yml's matrix, not
+# whatever interpreter you happen to be running. Compiled on 3.12 it pins
+# numpy 2.5.1, which requires >=3.12, and the 3.11 job then fails to install at
+# all. Targeting 3.11 makes the resolution emit both (2.4.6 below 3.12, 2.5.1
+# at or above) behind markers. Bump this when the matrix drops a version.
 #
 # Install with the hash check on, matching CI:
 #
