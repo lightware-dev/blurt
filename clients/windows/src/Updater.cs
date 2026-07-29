@@ -115,6 +115,15 @@ internal static class Updater
         }
         catch
         {
+            // Roll back unconditionally. File.Copy goes through CopyFile, which does
+            // not guarantee the destination is removed when it fails mid-write (disk
+            // full, an I/O fault, AV grabbing the handle) — so exePath may hold a
+            // truncated file. Testing File.Exists first would read that partial write
+            // as "already restored" and skip the rollback, leaving a corrupt Blurt.exe
+            // that can't start and therefore can never run CleanupOldExe to recover.
+            // Nothing can legitimately be at exePath here: it was moved to backup
+            // above, so anything present is the partial copy we need to undo.
+            TryDelete(exePath);
             if (!File.Exists(exePath)) File.Move(backup, exePath); // roll back
             throw;
         }
