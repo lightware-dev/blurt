@@ -31,6 +31,9 @@ internal sealed class BlurtApp : IDisposable
     private Icon? _currentIcon;
 
     private bool _recording;
+    // True while a certificate pre-flight is in flight, so a second trigger can't
+    // stack another probe (and another dialog) on top of the first.
+    private bool _preflighting;
     private Onboarding? _onboarding;
     private SettingsWindow? _settings;
 
@@ -57,13 +60,18 @@ internal sealed class BlurtApp : IDisposable
         // Off the UI thread since it may briefly retry while the old process exits.
         Task.Run(Updater.CleanupOldExe);
 
+        // WPF windows have to be built on the dispatcher thread; the trust check
+        // runs off it, so it reaches the dialog through here.
+        CertTrust.Confirm = decision => _ui.Invoke(() => TrustWindow.Ask(decision));
+
         SetupTray();
         Wire();
         ApplyShortcut();
 
         // First-run setup until the user has seen it once. Unlike macOS there's no
         // Accessibility gate to clear — text injection works without any grant.
-        if (!Settings.DidOnboard) ShowOnboarding();
+        if (!Settings.DidOnboard) ShowOnboarding();   // certificate check follows on close
+        else CheckServerCertificate();
 
         // Quietly check GitHub for a newer release on launch; only prompts if one
         // exists. Skipped under the debugger so dev runs aren't nagged to "update".
@@ -191,6 +199,21 @@ internal sealed class BlurtApp : IDisposable
         {
             _hud.Hide();
             ForceStop();
+            // A refused certificate arrives here as an opaque TLS failure. Say what
+            // really happened and offer to pin it — the fingerprint is already in
+            // hand, so this needs no second handshake. Reaching this means the
+            // certificate changed since the pre-flight; the next trigger connects.
+            if (_client.CertRejection is { } rejection)
+            {
+                // Either way this dictation is gone, so say so rather than
+                // letting the HUD vanish with no explanation.
+                if (CertTrust.PromptAndPin(rejection))
+                    Notify("Certificate trusted", "Press the shortcut again to dictate.");
+                else
+                    Notify("Connection refused",
+                        $"The certificate for {rejection.Host} isn't trusted, so Blurt didn't connect.");
+                return;
+            }
             Notify("Connection error", msg);
         });
     }
@@ -246,11 +269,42 @@ internal sealed class BlurtApp : IDisposable
 
     private void Toggle()
     {
+        if (_preflighting) return;
         if (_recording) StopRecording();
         else StartRecording();
     }
 
+    /// Settle the server's certificate *before* the HUD and the mic come up. A
+    /// trust dialog over a live "Listening…" HUD would swallow whatever the user
+    /// said while it was on screen, so the first dictation against an unknown
+    /// server pays a handshake here instead of losing itself. Only runs when the
+    /// host is still unsettled — the steady state goes straight to BeginRecording.
     private void StartRecording()
+    {
+        if (_recording) return;
+        if (!CertTrust.NeedsCheck(Settings.ServerUrl)) { BeginRecording(); return; }
+        _preflighting = true;
+        _ = PreflightThenRecordAsync();
+    }
+
+    private async Task PreflightThenRecordAsync()
+    {
+        var outcome = CertTrust.Outcome.Unreachable;
+        try
+        {
+            outcome = await CertTrust.PreflightAsync(Settings.ServerUrl).ConfigureAwait(false);
+        }
+        catch { /* treated as unreachable — the connection attempt reports the real error */ }
+        _ui.Invoke(() =>
+        {
+            _preflighting = false;
+            // Unreachable falls through to a normal connection attempt, so an
+            // offline server still gives the usual error rather than silence.
+            if (outcome != CertTrust.Outcome.Refused) BeginRecording();
+        });
+    }
+
+    private void BeginRecording()
     {
         if (_recording) return;
         _partialCommitted = "";
@@ -317,7 +371,11 @@ internal sealed class BlurtApp : IDisposable
     {
         if (_onboarding is not null) { _onboarding.Activate(); return; }
         var win = new Onboarding();
-        win.OnClose = () => _onboarding = null;
+        win.OnClose = () =>
+        {
+            _onboarding = null;
+            CheckServerCertificate();
+        };
         _onboarding = win;
         _app.MainWindow = win;
         win.Show();
@@ -338,6 +396,9 @@ internal sealed class BlurtApp : IDisposable
         var win = new SettingsWindow
         {
             OnChange = ApplyShortcut,
+            // A new server means a new certificate: settle it here rather than
+            // letting the next dictation discover it.
+            OnServerChanged = CheckServerCertificate,
             // Suspend our own triggers while a custom combo is being recorded, so the
             // active hotkey/double-tap can't swallow the keys being typed into the well.
             OnCaptureActive = capturing =>
@@ -354,6 +415,26 @@ internal sealed class BlurtApp : IDisposable
         _settings = win;
         win.Show();
         win.Activate();
+    }
+
+    /// Settle trust in the server's TLS certificate now, while nothing is being
+    /// dictated, so the first hotkey press isn't what triggers a trust dialog.
+    /// Silent unless the certificate is unknown or has changed.
+    ///
+    /// A global hotkey still fires while a modal dialog is up, so this holds
+    /// `_preflighting` for the duration — otherwise a trigger during the dialog
+    /// would start recording behind it.
+    private void CheckServerCertificate()
+    {
+        _preflighting = true;
+        _ = CheckServerCertificateAsync();
+    }
+
+    private async Task CheckServerCertificateAsync()
+    {
+        try { await CertTrust.PreflightAsync(Settings.ServerUrl).ConfigureAwait(false); }
+        catch { /* nothing to report: this check is silent unless it prompts */ }
+        _ui.Invoke(() => _preflighting = false);
     }
 
     private void ToggleStartup()

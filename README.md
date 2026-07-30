@@ -110,8 +110,9 @@ Serves `wss://<ip>:25878/ws` when `certs/cert.pem` + `certs/key.pem` exist
 (`BLURT_CERT_DIR` moves that directory — the container uses it to keep the cert
 on its cache volume), otherwise plain `ws://`. The `certs/` dir is git-ignored and generated per
 machine — run `scripts/gen_certs.sh` to mint a self-signed pair for your LAN
-(browsers require TLS for mic access; the Mac and Windows clients trust it after
-a one-time prompt). Open `https://<ip>:25878/` for a **browser mic test page**.
+(browsers require TLS for mic access; the clients pin it — see
+[**Certificate trust**](#certificate-trust)). Open `https://<ip>:25878/` for a
+**browser mic test page**.
 The default port **`25878`** is a mnemonic — `2-5-8-7-8` spells **BLURT** on a phone
 keypad (B→2, L→5, U→8, R→7, T→8). Override it with `--port` or `PORT`.
 
@@ -320,6 +321,32 @@ dotnet publish -c Release      # → publish/Blurt.exe
 On first run, point Blurt at your server URL, pick a hotkey (default: double-tap
 Ctrl), and dictate. Unlike macOS, Windows needs no Accessibility permission for
 text injection. See `clients/windows/README.md` for details.
+
+## Certificate trust
+
+Both clients authenticate the server's TLS certificate, and neither will talk to
+a `wss://` server it can't vouch for. What happens depends on the certificate:
+
+- **Signed by a real CA** — connects silently, nothing to confirm. Nothing is
+  pinned, so ordinary renewals keep working.
+- **Self-signed, first time for this server** — Blurt shows the host and the
+  certificate's SHA-256 fingerprint and asks you to confirm it once. Say yes and
+  it's pinned; from then on that server connects silently.
+- **Self-signed, and the fingerprint changed** — a louder warning, defaulting to
+  *Cancel*. Confirm only if you re-ran `gen_certs.sh` yourself; otherwise
+  something is impersonating your server.
+
+Pins are per `host:port`, so several servers (and `localhost` vs. a LAN address)
+are tracked independently — on macOS in `UserDefaults`, on Windows in
+`%APPDATA%\Blurt\config.json`. To compare a fingerprint against the server:
+
+```bash
+openssl x509 -in certs/cert.pem -noout -fingerprint -sha256
+```
+
+The check runs when the app launches and whenever you change the server URL, so
+the dialog never lands on top of a live dictation and eats what you were saying.
+A plain `ws://` server has no certificate and is unaffected.
 
 ## Contributing
 

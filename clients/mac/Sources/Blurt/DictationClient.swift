@@ -19,7 +19,17 @@ final class DictationClient: NSObject, URLSessionDelegate {
     var onStatus: ((String, String?) -> Void)?   // (state, detail)
     var onError: ((String) -> Void)?
 
+    /// Why the last handshake was refused, when it was refused over the server's
+    /// certificate. A rejected TLS handshake surfaces to `onError` as an opaque
+    /// "connection lost", so the app reads this to say what actually happened —
+    /// and to offer to pin the new certificate without a second handshake.
+    /// Main queue only.
+    private(set) var certRejection: (decision: CertTrust.Decision, host: String, port: Int)?
+
     func connectAndStart() {
+        // Cleared before the guards below, so a stale rejection can't make a
+        // plain bad-URL error come back as a certificate dialog.
+        certRejection = nil
         guard var comps = URLComponents(string: Settings.serverURL) else {
             onError?("Bad server URL"); return
         }
@@ -103,13 +113,35 @@ final class DictationClient: NSObject, URLSessionDelegate {
         }
     }
 
-    // Trust the server's self-signed cert (LAN use). Remove for a public CA cert.
+    /// Validate the server's certificate — silently. A certificate that is
+    /// system-valid or matches the pin for this host is accepted; anything else
+    /// drops the connection and records why in `certRejection`.
+    ///
+    /// Deliberately never prompts: by the time this runs the HUD is up and the
+    /// mic is live, so a trust dialog here would eat the user's first sentence.
+    /// CertTrust.preflight settles trust before recording ever starts.
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        if let trust = challenge.protectionSpace.serverTrust {
-            completionHandler(.useCredential, URLCredential(trust: trust))
-        } else {
+        guard let trust = challenge.protectionSpace.serverTrust else {
             completionHandler(.performDefaultHandling, nil)
+            return
         }
+        let host = challenge.protectionSpace.host
+        let port = challenge.protectionSpace.port
+        let decision = CertTrust.evaluate(trust: trust, host: host, port: port)
+        if case .trusted = decision {
+            DispatchQueue.main.async { CertTrust.markVerified(CertTrust.pinKey(host: host, port: port)) }
+            completionHandler(.useCredential, URLCredential(trust: trust))
+            return
+        }
+        // Enqueued before the handshake is failed, so it lands on main ahead of
+        // the onError that reads it.
+        DispatchQueue.main.async {
+            self.certRejection = (decision, host, port)
+            // So the next dictation settles this up front rather than bringing
+            // the mic up and failing the same way again.
+            CertTrust.markRejected(CertTrust.pinKey(host: host, port: port))
+        }
+        completionHandler(.cancelAuthenticationChallenge, nil)
     }
 }

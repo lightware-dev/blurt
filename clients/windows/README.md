@@ -45,6 +45,8 @@ Mirrors the Mac client file-for-file:
 | `AudioCapture.cs` | NAudio mic → 16 kHz mono PCM16 frames + FFT bands | `AudioCapture.swift` |
 | `Spectrum.cs` | PCM16 → log-spaced FFT band magnitudes | `Spectrum.swift` |
 | `DictationClient.cs` | `ClientWebSocket` → `{start}`/PCM/`{stop}` | `DictationClient.swift` |
+| `CertTrust.cs` | TOFU pinning of the server's TLS certificate | `CertTrust.swift` |
+| `TrustWindow.cs` | The "trust this certificate?" dialog | — (`NSAlert`) |
 | `TextInjector.cs` | `SendInput` paste / Unicode type | `TextInjector.swift` |
 | `Hud.cs` | Click-through topmost overlay | `HUD.swift` |
 | `Waveform.cs` | Animated layered-ribbon audio meter | `Waveform.swift` |
@@ -55,8 +57,10 @@ Mirrors the Mac client file-for-file:
 | `StartupRegistration.cs` | HKCU Run-key "start at login" | — |
 | `Updater.cs` | GitHub-release check + self-replace update | — (Mac uses Homebrew) |
 
-The server WebSocket protocol is identical to the Mac client's, including trusting
-the server's self-signed LAN certificate.
+The server WebSocket protocol is identical to the Mac client's, including how the
+server's self-signed LAN certificate is pinned on first use (`CertTrust.cs` +
+`TrustWindow.cs`, the twins of `CertTrust.swift` and its `NSAlert`) — pins live in
+`config.json` under `PinnedCerts`.
 
 ## Build (on a Windows machine)
 

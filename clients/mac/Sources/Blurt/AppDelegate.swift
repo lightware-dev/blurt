@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let client = DictationClient()
     private let hud = HUD()
     private var recording = false
+    // True while a certificate pre-flight is in flight, so a second trigger can't
+    // stack another probe (and another dialog) on top of the first.
+    private var preflighting = false
     // Live protocol state for the HUD: the latest structured partial, whether the
     // server's VAD currently hears speech, and whether the model is still loading.
     private var partialCommitted = ""
@@ -36,10 +39,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Show the first-run permissions screen until the user has seen it *and*
         // Accessibility is actually granted (without it Blurt can't type anything).
         if !Settings.didOnboard || !AXIsProcessTrusted() {
-            showOnboarding()
+            showOnboarding()   // the certificate check follows once it's dismissed
         } else {
             AVCaptureDevice.requestAccess(for: .audio) { _ in }
+            checkServerCertificate()
         }
+    }
+
+    /// Settle trust in the server's TLS certificate now, while nothing is being
+    /// dictated, so the first hotkey press isn't what triggers a trust dialog.
+    /// Silent unless the certificate is unknown or has changed.
+    ///
+    /// A global hotkey still fires while a modal alert is up, so this holds
+    /// `preflighting` for the duration — otherwise a trigger during the dialog
+    /// would start recording behind it.
+    private func checkServerCertificate() {
+        preflighting = true
+        CertTrust.preflight(Settings.serverURL) { [weak self] _ in self?.preflighting = false }
     }
 
     // MARK: menu bar
@@ -132,9 +148,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.notify("Dictation server error", first ?? "The server could not transcribe. Try again, and restart the server if it persists.")
         }
         client.onError = { [weak self] msg in
-            self?.hud.hide()
-            self?.forceStop()
-            self?.notify("Connection error", msg)
+            guard let self else { return }
+            self.hud.hide()
+            self.forceStop()
+            // A refused certificate arrives here as an opaque TLS failure. Say
+            // what really happened and offer to pin it — the fingerprint is
+            // already in hand, so this needs no second handshake. Reaching this
+            // means the certificate changed since the pre-flight; the next
+            // trigger connects.
+            if let rejection = self.client.certRejection {
+                // Either way this dictation is gone, so say so rather than
+                // letting the HUD vanish with no explanation.
+                if CertTrust.promptAndPin(rejection.decision, host: rejection.host, port: rejection.port) {
+                    self.notify("Certificate trusted", "Press the shortcut again to dictate.")
+                } else {
+                    self.notify("Connection refused",
+                                "The certificate for \(rejection.host) isn't trusted, so Blurt didn't connect.")
+                }
+                return
+            }
+            self.notify("Connection error", msg)
         }
     }
 
@@ -177,6 +210,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsWindow == nil {
             let controller = SettingsWindowController()
             controller.onChange = { [weak self] in self?.applyShortcut() }
+            // A new server means a new certificate: settle it here rather than
+            // letting the next dictation discover it.
+            controller.onServerChanged = { [weak self] in self?.checkServerCertificate() }
             controller.onCaptureActive = { [weak self] capturing in
                 // Suspend triggers while recording a combo so the active hotkey
                 // can't swallow the keys being typed into the capture well.
@@ -198,6 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.onClose = { [weak self] in
                 Settings.didOnboard = true
                 self?.onboarding = nil
+                self?.checkServerCertificate()
             }
             onboarding = controller
         }
@@ -217,10 +254,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: dictation state machine
 
     @objc private func toggle() {
+        guard !preflighting else { return }
         recording ? stopRecording() : startRecording()
     }
 
+    /// Settle the server's certificate *before* the HUD and the mic come up. A
+    /// trust dialog over a live "Listening…" HUD would swallow whatever the user
+    /// said while it was on screen, so the first dictation against an unknown
+    /// server pays a handshake here instead of losing itself. Only runs when the
+    /// host is still unsettled — the steady state goes straight to `beginRecording`.
     private func startRecording() {
+        guard !recording else { return }
+        guard CertTrust.needsCheck(Settings.serverURL) else { beginRecording(); return }
+        preflighting = true
+        CertTrust.preflight(Settings.serverURL) { [weak self] outcome in
+            guard let self else { return }
+            self.preflighting = false
+            // `.unreachable` falls through to a normal connection attempt, so an
+            // offline server still gives the usual error rather than silence.
+            guard outcome != .refused else { return }
+            self.beginRecording()
+        }
+    }
+
+    private func beginRecording() {
         guard !recording else { return }
         partialCommitted = ""
         partialLive = ""

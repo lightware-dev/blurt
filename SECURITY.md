@@ -49,10 +49,16 @@ vulnerabilities. If you can show that one is worse than described here, that
   set it, and the daemon binds `0.0.0.0`. Blurt is built for a trusted LAN, on
   the assumption that anyone who can reach the port is allowed to dictate. Set
   `AUTH_TOKEN` and firewall the port if that isn't true of your network.
-- **TLS is self-signed.** `scripts/gen_certs.sh` produces a certificate the
-  clients are expected to accept, so a machine-in-the-middle on your LAN is not
-  something the default setup defends against. It exists to get `wss://` and a
-  working browser mic page, not to authenticate the server.
+- **TLS is self-signed.** `scripts/gen_certs.sh` produces a certificate no
+  authority vouches for. The native clients pin it instead: you confirm its
+  SHA-256 fingerprint once, and from then on they refuse anything else for that
+  `host:port` and warn loudly if it changes. That authenticates the server
+  against a machine-in-the-middle *after* the first connection — the first one is
+  trust-on-first-use, and a browser pointed at the mic page still just shows the
+  usual "not private" interstitial. A certificate that validates against the
+  system trust store is also accepted without a pin, so an attacker holding a
+  publicly-trusted certificate for your server's hostname is still in scope for
+  the LAN threat model above.
 - **The Wyoming listener has no auth and no TLS**, matching the Wyoming
   ecosystem's norm, and `AUTH_TOKEN` does not apply to it. It is therefore
   **disabled by default** and must be enabled explicitly with a port.

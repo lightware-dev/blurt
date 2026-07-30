@@ -12,6 +12,10 @@ let package = Package(
                 .linkedFramework("AppKit"),
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("Carbon"),
+                // Certificate pinning (CertTrust.swift): SecTrust evaluation and
+                // the SHA-256 over the leaf's DER bytes.
+                .linkedFramework("Security"),
+                .linkedFramework("CryptoKit"),
             ]
         )
     ]
