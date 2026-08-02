@@ -495,6 +495,39 @@ cmd_snapshot() {
     log "snapshot '$name' created"
 }
 
+cmd_start() {
+    domain_exists || die "domain $VM_NAME does not exist; run '$0 provision' first"
+    domain_running && { log "$VM_NAME is already running"; return 0; }
+    v start "$VM_NAME" >/dev/null
+    log "started $VM_NAME"
+}
+
+cmd_stop() {
+    domain_running || { log "$VM_NAME is not running"; return 0; }
+    v shutdown "$VM_NAME" >/dev/null 2>&1 || true
+    local waited
+    for ((waited = 0; waited < 180; waited += 5)); do
+        domain_running || { log "$VM_NAME is down"; return 0; }
+        sleep 5
+    done
+    warn "guest did not shut down cleanly, pulling the plug"
+    v destroy "$VM_NAME" >/dev/null 2>&1 || true
+}
+
+# Roll back to a snapshot. The usual loop: snapshot 'clean' once, then revert to
+# it between rounds of installing the client rather than reprovisioning.
+cmd_revert() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: $0 revert <snapshot>  (see '$0 snapshots')"
+    domain_running && v destroy "$VM_NAME" >/dev/null 2>&1
+    v snapshot-revert "$VM_NAME" "$name"
+    log "reverted to '$name'; '$0 start' to boot it"
+}
+
+cmd_snapshots() {
+    v snapshot-list "$VM_NAME"
+}
+
 cmd_status() {
     if ! domain_exists; then
         echo "domain:  $VM_NAME (not defined)"
@@ -545,7 +578,11 @@ Console keyboard (works before sshd exists)
   bootstrap-ssh    install and start sshd (elevated) when first logon failed
 
 Manage
+  start            boot the VM
+  stop             shut the guest down (falls back to a hard stop)
   snapshot <name>  power down and snapshot
+  snapshots        list snapshots
+  revert <name>    roll back to a snapshot
   destroy --yes    delete the domain, its NVRAM and its disk
 
 Environment: LIBVIRT_URI VM_NAME VM_RAM_MB VM_VCPUS VM_DISK_GB VM_POOL
@@ -561,7 +598,7 @@ main() {
     local cmd="${1:-help}"
     shift || true
     case "$cmd" in
-        provision|iso|create|install|wait|ip|ssh|rdp|console|shot|snapshot|status|destroy|help|type|run|uac)
+        provision|iso|create|install|wait|ip|ssh|rdp|console|shot|snapshot|status|destroy|help|type|run|uac|start|stop|revert|snapshots)
             "cmd_$cmd" "$@"
             ;;
         bootstrap-ssh)
