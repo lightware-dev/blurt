@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Unattended install answer file for the Windows 11 test VM.
+
+  Windows Setup picks this up automatically from the root of any attached
+  removable drive, which is why win-vm.sh packs it into its own tiny ISO and
+  attaches it as a third CD-ROM rather than modifying the install media (the
+  Windows ISO stores its large files in a UDF tree that xorriso cannot rewrite).
+
+  Credentials are deliberately weak and hard-coded: this is a throwaway VM on an
+  isolated NAT network that gets wiped and rebuilt on demand.
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend"
+          xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE"
+               processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <SetupUILanguage>
+        <UILanguage>en-US</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Setup"
+               processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <DiskConfiguration>
+        <WillShowUI>OnError</WillShowUI>
+        <Disk wcm:action="add">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <CreatePartition wcm:action="add">
+              <Order>1</Order><Type>EFI</Type><Size>300</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>2</Order><Type>MSR</Type><Size>128</Size>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>3</Order><Type>Primary</Type><Extend>true</Extend>
+            </CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add">
+              <Order>1</Order><PartitionID>1</PartitionID>
+              <Label>System</Label><Format>FAT32</Format>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>2</Order><PartitionID>2</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>3</Order><PartitionID>3</PartitionID>
+              <Label>Windows</Label><Letter>C</Letter><Format>NTFS</Format>
+            </ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+
+      <!--
+        No InstallFrom/MetaData on purpose. The Enterprise Evaluation media
+        carries a single image, so Setup installs it without an edition prompt
+        and we avoid hard-coding an /IMAGE/INDEX that cannot be verified from
+        Linux (the ISO's UDF tree is not readable with xorriso).
+      -->
+      <ImageInstall>
+        <OSImage>
+          <InstallTo><DiskID>0</DiskID><PartitionID>3</PartitionID></InstallTo>
+          <InstallToAvailablePartition>false</InstallToAvailablePartition>
+          <WillShowUI>OnError</WillShowUI>
+        </OSImage>
+      </ImageInstall>
+
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <FullName>Blurt</FullName>
+        <Organization>Blurt</Organization>
+        <!-- Empty key: the evaluation media is pre-keyed; this only skips the page. -->
+        <ProductKey><Key></Key></ProductKey>
+      </UserData>
+    </component>
+  </settings>
+
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <ComputerName>BLURT-WIN11</ComputerName>
+    </component>
+
+    <!-- RDP on with NLA off, so freerdp/remmina from the host connects without a domain. -->
+    <component name="Microsoft-Windows-TerminalServices-LocalSessionManager"
+               processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <fDenyTSConnections>false</fDenyTSConnections>
+    </component>
+    <component name="Microsoft-Windows-TerminalServices-RDP-WinStationExtensions"
+               processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <UserAuthentication>0</UserAuthentication>
+    </component>
+    <component name="Networking-MPSSVC-Svc"
+               processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <FirewallGroups>
+        <FirewallGroup wcm:action="add" wcm:keyValue="RemoteDesktop">
+          <Active>true</Active>
+          <Group>@FirewallAPI.dll,-28752</Group>
+          <Profile>all</Profile>
+        </FirewallGroup>
+      </FirewallGroups>
+    </component>
+
+    <component name="Microsoft-Windows-Deployment"
+               processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <!--
+        Everything that needs administrator rights lives here, not in
+        FirstLogonCommands. The specialize pass runs as SYSTEM, whereas Windows
+        11 runs FirstLogonCommands with a UAC-filtered token even for an account
+        in Administrators - so Add-WindowsCapability, HKLM writes and netsh all
+        fail there with "The requested operation requires elevation", silently,
+        leaving a VM that boots to a desktop with no way in.
+
+        Two hard constraints shape what can go here:
+
+          * <Path> is capped at 259 characters.
+          * A command that exits non-zero is FATAL. Setup aborts with "The
+            computer restarted unexpectedly or encountered an unexpected error"
+            and the install cannot be resumed. powershell.exe exits 1 on a
+            merely non-terminating error, so this is very easy to trip.
+
+        Hence the real work lives in setup-guest.ps1 on the answer-file ISO,
+        which is best-effort throughout and always exits 0.
+      -->
+      <RunSynchronous>
+        <!--
+          Exactly one command, so there is only one thing that can abort Setup.
+          It scans the attached drives for setup-guest.ps1 (the answer-file ISO's
+          letter is not predictable) and runs it, swallowing any failure.
+        -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>Run the guest provisioning script from the answer ISO</Description>
+          <Path>powershell -NoProfile -ExecutionPolicy Bypass -Command "gdr -PSProvider FileSystem | %{ $p = $_.Root + 'setup-guest.ps1'; if (Test-Path $p) { &amp; $p } }; exit 0"</Path>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+    </component>
+  </settings>
+
+  <settings pass="oobeSystem">
+    <!--
+      This component is what actually skips the "Is this the right country or
+      region?" and "Is this the right keyboard layout?" pages. Setting the
+      locales only in the windowsPE pass is NOT enough - OOBE asks again, and
+      the install stalls there forever waiting on a click.
+    -->
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UILanguageFallback>en-US</UILanguageFallback>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS">
+      <TimeZone>GMT Standard Time</TimeZone>
+
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>blurt</Name>
+            <DisplayName>blurt</DisplayName>
+            <Group>Administrators</Group>
+            <Password>
+              <Value>Blurt!2026</Value>
+              <PlainText>true</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+
+      <!--
+        The tray client needs a real interactive desktop session: no HUD, no
+        SendInput text injection and no low-level keyboard hook work from a
+        service context, so the VM must land on a logged-in desktop by itself.
+      -->
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>blurt</Username>
+        <LogonCount>999</LogonCount>
+        <Password>
+          <Value>Blurt!2026</Value>
+          <PlainText>true</PlainText>
+        </Password>
+      </AutoLogon>
+
+      <!--
+        Deliberately no FirstLogonCommands: they run non-elevated, so anything
+        worth doing here has to go in the specialize pass above. The one thing
+        this pass is for is landing on a logged-in desktop, which AutoLogon
+        already handles.
+      -->
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>Drop a marker showing first logon completed</Description>
+          <CommandLine>cmd /c echo done &gt; "%USERPROFILE%\first-logon-done.txt"</CommandLine>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
+</unattend>
