@@ -84,6 +84,9 @@ internal sealed class SettingsWindow : Window
     /// Fired around custom-shortcut recording so the app can suspend its own
     /// triggers — otherwise the active hotkey would swallow the combo being typed.
     public Action<bool>? OnCaptureActive;
+    /// Fired when the server URL actually changes, so the app can settle trust in
+    /// the new server's certificate before the next dictation needs it.
+    public Action? OnServerChanged;
     public Action? OnClose;
 
     private readonly Dictionary<Settings.ShortcutMode, RadioButton> _shortcutRadios = new();
@@ -242,8 +245,11 @@ internal sealed class SettingsWindow : Window
 
     private void PersistServerFields()
     {
-        Settings.ServerUrl = _serverField.Text.Trim();
+        var url = _serverField.Text.Trim();
+        var moved = url != Settings.ServerUrl;
+        Settings.ServerUrl = url;
         Settings.AuthToken = _tokenField.Text.Trim();
+        if (moved) OnServerChanged?.Invoke();
     }
 
     // ── view helpers (mirrored from Onboarding.cs) ───────────

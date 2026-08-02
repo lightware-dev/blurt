@@ -182,6 +182,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
     /// Fired around custom-shortcut recording so the app can suspend its own
     /// triggers — otherwise the active hotkey would swallow the combo being typed.
     var onCaptureActive: ((Bool) -> Void)?
+    /// Fired when the server URL actually changes, so the app can settle trust in
+    /// the new server's certificate before the next dictation needs it.
+    var onServerChanged: (() -> Void)?
 
     private let colW: CGFloat = 300       // width of one card column
     private let colGap: CGFloat = 16      // gap between the two columns
@@ -472,8 +475,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
 
     /// Persist the server fields when editing ends (tab away, click away, close).
     func controlTextDidEndEditing(_ obj: Notification) {
-        Settings.serverURL = serverField.stringValue.trimmingCharacters(in: .whitespaces)
+        let url = serverField.stringValue.trimmingCharacters(in: .whitespaces)
+        let moved = url != Settings.serverURL
+        Settings.serverURL = url
         Settings.authToken = tokenField.stringValue.trimmingCharacters(in: .whitespaces)
+        if moved { onServerChanged?() }
     }
 
     // MARK: lifecycle

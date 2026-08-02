@@ -144,10 +144,14 @@ differ if the mouse and the focused field are on different displays.
 - **Hotkey** defaults to **double-tap ⌥** (`Settings.shortcutMode = .doubleTap`).
   Alternatives — ⌥Space or a custom Carbon chord (`hotKeyCode` / `hotKeyMods`) —
   are selectable in **Settings…**; all persist in UserDefaults.
-- **Self-signed cert:** the client trusts the server's TLS cert (LAN use). For a
-  properly-signed cert, remove the trust-all block in `DictationClient.swift`.
+- **Self-signed cert:** `CertTrust.swift` pins it on first use — you confirm the
+  SHA-256 fingerprint once, and only that certificate is accepted for that
+  `host:port` afterwards (a certificate signed by a real CA connects silently and
+  is never pinned). The check runs at launch and when the server URL changes, so
+  the dialog can't land on a live HUD. Pins live in UserDefaults under
+  `pinnedCerts`.
 - **Architecture:** `HotKey` (Carbon global hotkey) · `AudioCapture`
   (AVAudioEngine → 16 kHz PCM16) · `DictationClient` (URLSession WebSocket) ·
-  `HUD` (borderless overlay) · `TextInjector` (paste / type) · `AppDelegate`
-  (menu + state machine).
+  `CertTrust` (certificate pinning) · `HUD` (borderless overlay) ·
+  `TextInjector` (paste / type) · `AppDelegate` (menu + state machine).
 ```

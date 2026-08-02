@@ -21,6 +21,9 @@ internal static class Settings
         // Ctrl+Alt+Space so a fresh "Custom" pick isn't an empty, unregisterable combo.
         public uint HotKeyVk { get; set; } = 0x20;                 // VK_SPACE
         public uint HotKeyMods { get; set; } = 0x0002 | 0x0001;    // MOD_CONTROL | MOD_ALT
+        /// Trusted self-signed server certificates: lowercased `host:port` →
+        /// SHA-256 fingerprint. See CertTrust.
+        public Dictionary<string, string> PinnedCerts { get; set; } = new();
     }
 
     private static readonly string Dir =
@@ -35,7 +38,13 @@ internal static class Settings
         try
         {
             if (System.IO.File.Exists(File))
-                return JsonSerializer.Deserialize<Model>(System.IO.File.ReadAllText(File)) ?? new Model();
+            {
+                var model = JsonSerializer.Deserialize<Model>(System.IO.File.ReadAllText(File)) ?? new Model();
+                // An explicit `"PinnedCerts": null` in the file would otherwise
+                // beat the initializer and NRE on the first pin.
+                model.PinnedCerts ??= new Dictionary<string, string>();
+                return model;
+            }
         }
         catch { /* corrupt/unreadable → fall back to defaults */ }
         return new Model();
@@ -46,7 +55,13 @@ internal static class Settings
         try
         {
             Directory.CreateDirectory(Dir);
-            System.IO.File.WriteAllText(File, JsonSerializer.Serialize(Current, JsonOpts));
+            // The whole write is serialized, not just the serialization: pins are
+            // saved off the UI thread now, and WriteAllText opens with
+            // FileShare.Read, so two concurrent saves would have one lose its
+            // write to an IOException swallowed below — silently discarding the
+            // user's "Trust" click.
+            lock (Current)
+                System.IO.File.WriteAllText(File, JsonSerializer.Serialize(Current, JsonOpts));
         }
         catch { /* best-effort; don't crash dictation over a failed write */ }
     }
@@ -69,6 +84,21 @@ internal static class Settings
     {
         get => Current.InjectMode;
         set { Current.InjectMode = value; Save(); }
+    }
+
+    /// The SHA-256 fingerprint the user has trusted for a `host:port`, if any.
+    /// Per-host so that pointing the client at a different server doesn't drop
+    /// trust for the old one, and so localhost and a LAN address are tracked
+    /// separately.
+    public static string? PinnedFingerprint(string hostPort)
+    {
+        lock (Current) return Current.PinnedCerts.GetValueOrDefault(hostPort);
+    }
+
+    public static void SetPinnedFingerprint(string fingerprint, string hostPort)
+    {
+        lock (Current) Current.PinnedCerts[hostPort] = fingerprint;
+        Save();
     }
 
     /// Whether the first-run setup screen has been dismissed at least once.

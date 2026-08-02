@@ -21,6 +21,13 @@ internal sealed class DictationClient
     public Action<string, string?>? OnStatus; // (state, detail)
     public Action<string>? OnError;
 
+    /// Why the last handshake was refused, when it was refused over the server's
+    /// certificate. A rejected TLS handshake surfaces to <see cref="OnError"/> as
+    /// an opaque exception, so the app reads this to say what actually happened —
+    /// and to offer to pin the new certificate without a second handshake.
+    /// Written on the TLS callback's thread, read on the UI thread.
+    public volatile TrustDecision? CertRejection;
+
     private ClientWebSocket? _socket;
     private CancellationTokenSource? _cts;
     private volatile bool _closing;
@@ -50,10 +57,31 @@ internal sealed class DictationClient
         _closing = false;
         _dictationId = Guid.NewGuid().ToString("N");
         _cts = new CancellationTokenSource();
+        CertRejection = null;
         var socket = new ClientWebSocket();
-        // Trust the server's self-signed cert (LAN use), matching the Mac client's
-        // URLSession trust-all delegate. Remove for a public CA cert.
-        socket.Options.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        // Validate the server's certificate — silently. A certificate that is
+        // system-valid or matches the pin for this host is accepted; anything else
+        // drops the connection and records why.
+        //
+        // Deliberately never prompts: by the time this runs the HUD is up and the
+        // mic is live, so a trust dialog here would eat the user's first sentence.
+        // CertTrust.PreflightAsync settles trust before recording ever starts.
+        var host = url.Host;
+        var port = CertTrust.Port(url);
+        socket.Options.RemoteCertificateValidationCallback = (_, cert, _, errors) =>
+        {
+            var decision = CertTrust.Evaluate(cert, host, port, errors);
+            if (decision.Kind == TrustKind.Trusted)
+            {
+                CertTrust.MarkVerified(decision.Key);
+                return true;
+            }
+            CertRejection = decision;
+            // So the next dictation settles this up front rather than bringing
+            // the mic up and failing the same way again.
+            CertTrust.MarkRejected(decision.Key);
+            return false;
+        };
         _socket = socket;
 
         _ = RunAsync(socket, url, _cts.Token);

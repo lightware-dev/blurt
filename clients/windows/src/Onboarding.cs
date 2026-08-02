@@ -95,8 +95,9 @@ internal sealed class Onboarding : Window
 
         var serverCard = MakeCard("01", "Server", new UIElement[]
         {
-            Body("The WebSocket URL of your Blurt server. The self-signed LAN " +
-                 "certificate is trusted automatically.", Brand.Solid(Brand.Bone, 0.72), 13),
+            Body("The WebSocket URL of your Blurt server. Blurt asks you to confirm " +
+                 "its self-signed certificate once, then trusts only that one.",
+                 Brand.Solid(Brand.Bone, 0.72), 13),
             FieldLabel("Server URL"), _serverField,
             FieldLabel("Auth token (optional)"), _tokenField,
         });

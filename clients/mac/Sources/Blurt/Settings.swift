@@ -44,6 +44,22 @@ enum Settings {
         set { d.set(newValue.rawValue, forKey: "shortcutMode") }
     }
 
+    /// SHA-256 fingerprints of the self-signed server certificates the user has
+    /// trusted, keyed by lowercased `host:port` (see CertTrust). Per-host so
+    /// that pointing the client at a different server doesn't drop trust for the
+    /// old one, and so localhost and a LAN address are tracked separately.
+    private static let pinnedCertsKey = "pinnedCerts"
+
+    static func pinnedFingerprint(host: String) -> String? {
+        (d.dictionary(forKey: pinnedCertsKey) as? [String: String])?[host]
+    }
+
+    static func setPinnedFingerprint(_ fingerprint: String, host: String) {
+        var pins = (d.dictionary(forKey: pinnedCertsKey) as? [String: String]) ?? [:]
+        pins[host] = fingerprint
+        d.set(pins, forKey: pinnedCertsKey)
+    }
+
     /// Whether the first-run permissions screen has been dismissed at least once.
     static var didOnboard: Bool {
         get { d.bool(forKey: "didOnboard") }
