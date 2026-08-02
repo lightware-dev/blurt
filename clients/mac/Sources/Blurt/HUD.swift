@@ -19,6 +19,14 @@ final class HUD {
     private var generation = 0
     private var screenObserver: Any?
 
+    /// What the pill is displaying right now. Kept so the window can be rebuilt and
+    /// re-shown with identical content if it ever fails to reach the active space.
+    private enum Render {
+        case partial(committed: String, live: String, placeholder: String)
+        case flash(String)
+    }
+    private var lastRender: Render?
+
     init() {
         // The window is built once and cached for the app's lifetime. If the display
         // topology changes underneath it (sleep/wake, a monitor un/replugged, a
@@ -47,20 +55,7 @@ final class HUD {
     /// server's VAD confirms speech).
     func show(committed: String, live: String, placeholder: String = "Listening…") {
         DispatchQueue.main.async {
-            self.generation += 1
-            if self.window == nil { self.build() }
-            if committed.isEmpty && live.isEmpty {
-                self.label.stringValue = placeholder
-                self.label.font = Brand.mono(17)
-                self.label.textColor = Brand.boneDim
-            } else {
-                self.label.attributedStringValue = Self.styledPartial(committed: committed, live: live)
-            }
-            self.wave.isHidden = false
-            self.labelAtLeading?.isActive = false
-            self.labelAfterWave?.isActive = true
-            self.position()
-            self.window?.orderFrontRegardless()
+            self.present(.partial(committed: committed, live: live, placeholder: placeholder))
         }
     }
 
@@ -113,47 +108,127 @@ final class HUD {
     /// unless a newer session has since taken over the HUD.
     func flash(_ text: String) {
         DispatchQueue.main.async {
-            self.generation += 1
-            let token = self.generation
-            if self.window == nil { self.build() }
-            self.label.stringValue = text
-            self.label.font = Brand.mono(17)
-            self.label.textColor = Brand.boneDim
-            // Recording is over during a flash message — no meter; the label
-            // takes over the wave's spot so the text isn't oddly indented.
-            self.wave.reset()
-            self.wave.isHidden = true
-            self.labelAfterWave?.isActive = false
-            self.labelAtLeading?.isActive = true
-            self.position()
-            self.window?.orderFrontRegardless()
+            let token = self.present(.flash(text))
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if self.generation == token { self.window?.orderOut(nil) }
             }
         }
     }
 
+    /// Put the pill on screen with the given content, and return the generation
+    /// token for this show so a caller can schedule a follow-up (the flash
+    /// auto-hide) that no-ops if a newer session has taken the HUD over.
+    @discardableResult
+    private func present(_ render: Render) -> Int {
+        generation += 1
+        let token = generation
+        lastRender = render
+        if window == nil { build() }
+        apply(render)
+        position()
+        orderFront()
+        verifyReachedActiveSpace(token: token)
+        return token
+    }
+
+    private func apply(_ render: Render) {
+        switch render {
+        case let .partial(committed, live, placeholder):
+            if committed.isEmpty && live.isEmpty {
+                label.stringValue = placeholder
+                label.font = Brand.mono(17)
+                label.textColor = Brand.boneDim
+            } else {
+                label.attributedStringValue = Self.styledPartial(committed: committed, live: live)
+            }
+            wave.isHidden = false
+            labelAtLeading?.isActive = false
+            labelAfterWave?.isActive = true
+        case let .flash(text):
+            label.stringValue = text
+            label.font = Brand.mono(17)
+            label.textColor = Brand.boneDim
+            // Recording is over during a flash message — no meter; the label
+            // takes over the wave's spot so the text isn't oddly indented.
+            wave.reset()
+            wave.isHidden = true
+            labelAfterWave?.isActive = false
+            labelAtLeading?.isActive = true
+        }
+    }
+
+    /// Set the two properties that decide *where* the pill lands — which space it
+    /// joins, and whether it wins the z-order fight once there — then order it in.
+    /// These live here, not in build(), because the panel is cached for the app's
+    /// lifetime: setting them at build time means setting them once and then asking
+    /// them to survive every space switch, full-screen transition and display sleep
+    /// for the rest of the session. A cached window ordered out and back in across
+    /// those can come back bound to the space it was last shown on rather than
+    /// joining the active one — recording then runs with the pill sitting on a space
+    /// the user isn't looking at, which is exactly what a full-screen app on its own
+    /// space triggers. Re-applying them per show costs nothing and keeps the window
+    /// server's idea of the pill's space membership in sync with ours.
+    private func orderFront() {
+        guard let w = window else { return }
+        // Sit above .statusBar (25): some full-screen apps paint their own content at
+        // or above that level and win the z-order fight, leaving the pill present but
+        // drawn underneath. .screenSaver (1000) clears them.
+        w.level = .screenSaver
+        // .canJoinAllApplications is the flag Apple documents for this ("allowing it
+        // to join other apps' sets and full screen spaces"). Notably absent:
+        // .fullScreenAuxiliary, which reads like the right flag and isn't — it's for a
+        // window accompanying its *own* app's full-screen window, and it binds the
+        // panel to that window's space. When the app owning that space quits, the
+        // binding rots and the pill starts coming back on a stale space instead of the
+        // active one, which is why the HUD would strand itself behind a full-screen
+        // app after having worked minutes earlier.
+        w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .canJoinAllApplications]
+        w.orderFrontRegardless()
+    }
+
+    /// Confirm the pill actually reached the space the user is looking at.
+    /// `orderFrontRegardless()` reports nothing back, so ask the window server:
+    /// a window that joined the active space appears in the on-screen-only window
+    /// list, and one stranded on another space does not. If it missed, the cached
+    /// panel is in a state we can't otherwise detect — throw it away, rebuild it
+    /// and replay the same content once. Re-showing goes through `orderFront()`
+    /// but deliberately not through this check again, so a genuinely stuck window
+    /// can't spin.
+    private func verifyReachedActiveSpace(token: Int) {
+        guard let number = window?.windowNumber else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            // A newer show, or a hide, has taken the HUD over in the meantime.
+            guard self.generation == token, let render = self.lastRender else { return }
+            let onScreen = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+                as? [[String: Any]]) ?? []
+            let arrived = onScreen.contains { ($0[kCGWindowNumber as String] as? Int) == number }
+            guard !arrived else { return }
+            NSLog("[Blurt] HUD window \(number) missed the active space; rebuilding")
+            self.window?.orderOut(nil)
+            self.window = nil
+            self.build()
+            self.apply(render)
+            self.position()
+            self.orderFront()
+        }
+    }
+
     private func build() {
         // A non-activating NSPanel — not a plain NSWindow — so that ordering it front
         // over a full-screen app never steals focus or kicks that app out of
-        // fullscreen. (canJoinAllSpaces + fullScreenAuxiliary already get the pill
-        // *into* other apps' full-screen spaces.)
+        // fullscreen. Getting the pill *into* that space is orderFront()'s job.
         let w = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         w.isFloatingPanel = true
         w.hidesOnDeactivate = false
-        // Sit above .statusBar (25). The pill reaches every space, including other
-        // apps' full-screen spaces, but some full-screen apps paint their own content
-        // at or above the status-bar level and win the z-order fight — the pill is
-        // there but drawn underneath. .screenSaver (1000) clears that so the HUD stays
-        // visible on top of any full-screen app.
-        w.level = .screenSaver
         w.isOpaque = false
         w.backgroundColor = .clear
         w.hasShadow = true
         w.ignoresMouseEvents = true
-        w.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        // Level and collection behaviour — which space the pill joins, and whether it
+        // wins the z-order fight there — are set in orderFront() instead, so they're
+        // re-applied on every show rather than only on the build that happens once.
 
         let container = NSView()
         container.wantsLayer = true
