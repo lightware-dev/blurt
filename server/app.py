@@ -119,6 +119,12 @@ def server_info() -> dict:
 
     `audio` is the server's native format; clients may declare a different one in
     `start` and the server converts (see server/pcm.py).
+
+    `stop_timeout_s` is this server's own budget for producing a `final`. It's
+    advertised so a client can bound its wait on one without having to guess: a
+    client that assumed the default would cut off a server configured to take
+    longer, and one that waited forever hangs its UI when a `final` never comes
+    at all.
     """
     return {
         "type": "info",
@@ -128,6 +134,7 @@ def server_info() -> dict:
         "model": asr.model_name,
         "state": "ready" if asr.is_loaded else "loading",
         "audio": {"rate": SAMPLE_RATE, "width": 2, "channels": 1},
+        "stop_timeout_s": STOP_TIMEOUT_S,
     }
 
 

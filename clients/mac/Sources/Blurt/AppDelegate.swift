@@ -229,6 +229,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         client.onUnreachable = { [weak self] detail in
             self?.connectionFailed(detail, unreachable: true)
         }
+        client.onFinalizeTimeout = { [weak self] in
+            guard let self else { return }
+            self.forceStop()
+            self.hud.hide()
+            // The partials are real transcription — only the final re-decode is
+            // missing — so keep them rather than charging the user for the
+            // server's silence. Not injected: by now the wait has outlasted the
+            // server's whole finalization budget, and whatever had focus when
+            // they stopped talking almost certainly doesn't any more.
+            let salvaged = [self.partialCommitted, self.partialLive]
+                .filter { !$0.isEmpty }.joined(separator: " ")
+            if !salvaged.isEmpty {
+                self.lastDictation = salvaged
+                self.copyLastItem?.isEnabled = true
+            }
+            self.notify("The server never finished this dictation",
+                        salvaged.isEmpty
+                            ? "\(Self.serverLabel()) acknowledged the recording but never returned a transcript. Restart blurtd if it persists."
+                            : "\(Self.serverLabel()) never returned the finished transcript. What it had transcribed so far is under “Copy Last Dictation” in the menu bar.")
+        }
         client.onError = { [weak self] msg in
             self?.connectionFailed(msg, unreachable: false)
         }

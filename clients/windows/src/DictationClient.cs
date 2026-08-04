@@ -27,6 +27,20 @@ internal sealed class DictationClient
     /// nobody gets through a sentence first. (Mirrors the Swift twin.)
     private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(3);
 
+    /// How long past the server's own finalization budget to wait for a `final`
+    /// before giving up on it. The server promises exactly one `final` per
+    /// `stop`, degrading to the committed text rather than going quiet, so
+    /// overshooting its budget means something wedged rather than something
+    /// slow. The margin covers the network and a server busy enough to be late
+    /// answering its own deadline.
+    private static readonly TimeSpan FinalizeGrace = TimeSpan.FromSeconds(15);
+
+    /// The server's finalization budget, from `info`. The default matches
+    /// blurtd's own STOP_TIMEOUT_S default, for a server too old to advertise it
+    /// — guessing low would cut off a legitimately slow decode. Written on the
+    /// receive-loop thread, read there too when Stop() arms the watchdog.
+    private volatile int _stopTimeoutSeconds = 60;
+
     public Action<string, string>? OnPartial; // (committed, live) — live may still be revised
     public Action<string>? OnFinal;
     public Action<bool>? OnVad;               // server-side VAD: is it hearing speech?
@@ -41,6 +55,9 @@ internal sealed class DictationClient
     /// from <see cref="OnError"/> because the cause is specific and the fix is
     /// actionable — start blurtd — where a mid-dictation drop is neither.
     public Action<string>? OnUnreachable;
+    /// `stop` was acknowledged by nothing: the socket is still up but the
+    /// server's `final` never came, and waiting longer won't help.
+    public Action? OnFinalizeTimeout;
 
     /// Why the last handshake was refused, when it was refused over the server's
     /// certificate. A rejected TLS handshake surfaces to <see cref="OnError"/> as
@@ -51,6 +68,9 @@ internal sealed class DictationClient
 
     private ClientWebSocket? _socket;
     private CancellationTokenSource? _cts;
+    /// Cancels the wait for a `final`. Separate from _cts because it's armed by
+    /// Stop(), which is the one teardown path that must keep the socket open.
+    private CancellationTokenSource? _finalizeCts;
     private volatile bool _closing;
     /// Whether anything has come back from the server on this connection. Until
     /// it has, we have no evidence of a blurtd on the other end — TCP and TLS
@@ -87,6 +107,7 @@ internal sealed class DictationClient
         _closing = false;
         _serverSpoke = false;
         _reportedFailure = 0;
+        _finalizeCts?.Cancel();   // defensive: a previous session's wait, if any
         _dictationId = Guid.NewGuid().ToString("N");
         _cts = new CancellationTokenSource();
         CertRejection = null;
@@ -205,13 +226,41 @@ internal sealed class DictationClient
     }
 
     /// Ask the server to finalize; it replies with a {final} message.
-    public void Stop() => _ = SendJsonAsync(new { type = "stop", id = _dictationId },
-        _cts?.Token ?? CancellationToken.None);
+    public void Stop()
+    {
+        _ = SendJsonAsync(new { type = "stop", id = _dictationId },
+            _cts?.Token ?? CancellationToken.None);
+        ArmFinalizeWatchdog();
+    }
+
+    /// Stop waiting on a `final` that isn't coming. A wedged server (or one
+    /// killed between the `stop` and the reply) leaves an otherwise healthy
+    /// socket with nothing on it, which the receive loop has no way to notice —
+    /// so without this the HUD sits on the last partial for good. Cancelled by
+    /// the `final` itself, and by Close().
+    private void ArmFinalizeWatchdog()
+    {
+        _finalizeCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _finalizeCts = cts;
+        _ = FinalizeWatchdogAsync(cts.Token);
+    }
+
+    private async Task FinalizeWatchdogAsync(CancellationToken ct)
+    {
+        var budget = TimeSpan.FromSeconds(_stopTimeoutSeconds) + FinalizeGrace;
+        try { await Task.Delay(budget, ct).ConfigureAwait(false); }
+        catch (OperationCanceledException) { return; }
+        if (_closing) return;
+        Close();
+        OnFinalizeTimeout?.Invoke();
+    }
 
     public void Close()
     {
         _closing = true;
         _cts?.Cancel();
+        _finalizeCts?.Cancel();
         try { _socket?.Abort(); } catch { /* ignore */ }
         _socket?.Dispose();
         _socket = null;
@@ -297,11 +346,22 @@ internal sealed class DictationClient
                         root.TryGetProperty("committed", out var c) ? c.GetString() ?? "" : "",
                         root.TryGetProperty("live", out var l) ? l.GetString() ?? "" : "");
                     break;
-                case "final": OnFinal?.Invoke(text); break;
+                case "final":
+                    // Cancelled here rather than leaning on the Close() that
+                    // follows in OnFinal: if the final lands on the deadline
+                    // both are already in flight, and this one is first.
+                    _finalizeCts?.Cancel();
+                    OnFinal?.Invoke(text);
+                    break;
                 case "vad":
                     OnVad?.Invoke(root.TryGetProperty("speech", out var sp) && sp.GetBoolean());
                     break;
                 case "info":
+                    // Additive field: a server too old to send it leaves the
+                    // default standing (see _stopTimeoutSeconds).
+                    if (root.TryGetProperty("stop_timeout_s", out var budget)
+                        && budget.TryGetDouble(out var seconds) && seconds > 0)
+                        _stopTimeoutSeconds = (int)Math.Ceiling(seconds);
                     OnInfo?.Invoke(
                         root.TryGetProperty("state", out var st) ? st.GetString() ?? "" : "",
                         root.TryGetProperty("model", out var mo) ? mo.GetString() ?? "" : "");

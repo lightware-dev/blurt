@@ -270,6 +270,27 @@ internal sealed class BlurtApp : IDisposable
                     : first);
         });
         _client.OnUnreachable = detail => _ui.Invoke(() => ConnectionFailed(detail, unreachable: true));
+        _client.OnFinalizeTimeout = () => _ui.Invoke(() =>
+        {
+            ForceStop();
+            _hud.Hide();
+            // The partials are real transcription — only the final re-decode is
+            // missing — so keep them rather than charging the user for the
+            // server's silence. Not injected: by now the wait has outlasted the
+            // server's whole finalization budget, and whatever had focus when
+            // they stopped talking almost certainly doesn't any more.
+            var salvaged = string.Join(" ",
+                new[] { _partialCommitted, _partialLive }.Where(s => !string.IsNullOrEmpty(s)));
+            if (salvaged.Length > 0)
+            {
+                _lastDictation = salvaged;
+                if (_copyLastItem is not null) _copyLastItem.Enabled = true;
+            }
+            Notify("The server never finished this dictation",
+                salvaged.Length == 0
+                    ? $"{ServerLabel()} acknowledged the recording but never returned a transcript. Restart blurtd if it persists."
+                    : $"{ServerLabel()} never returned the finished transcript. What it had transcribed so far is under \"Copy Last Dictation\" in the tray menu.");
+        });
         _client.OnError = msg => _ui.Invoke(() => ConnectionFailed(msg, unreachable: false));
     }
 

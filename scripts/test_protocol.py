@@ -181,6 +181,11 @@ async def suite_native(app):
             info = json.loads(await ws.recv())
             check("info on connect", info["type"] == "info" and info["protocol"] == 1
                   and info["state"] == "ready" and info["audio"]["rate"] == SR)
+            # The clients bound their wait for a `final` on this, so a server
+            # that stops advertising it silently reverts them to guessing.
+            check("info advertises the stop budget",
+                  isinstance(info.get("stop_timeout_s"), (int, float))
+                  and info["stop_timeout_s"] > 0)
 
             await ws.send(json.dumps({"type": "describe"}))
             check("describe -> info", json.loads(await ws.recv())["type"] == "info")
