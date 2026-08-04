@@ -64,11 +64,24 @@ concurrency:
 jobs:
     # Point extra tags at an image that already exists, without rebuilding it.
     #
-    # This is a *retag*, not a rebuild: `imagetools create` copies the manifest,
-    # so the digest is unchanged and the provenance attestation already attached
-    # to it keeps covering the promoted tags (attestations are keyed by digest,
-    # not by tag). A rebuild would produce a different digest for identical
-    # inputs and split the attestation across two images.
+    # The point is to keep the *digest* identical, because the provenance
+    # attestation is keyed by digest rather than by tag — so a tag that resolves
+    # to the attested digest is covered, and one that doesn't is not verifiable
+    # at all. A rebuild would produce a fresh digest for identical inputs and
+    # split the attestation across two images.
+    #
+    # `docker buildx imagetools create` is the obvious tool here and is WRONG for
+    # it: given a single source it builds a new image *index* wrapping that
+    # manifest, which is a new digest. Tags made that way still pull fine (the
+    # index resolves to the same image), so it looks correct — but
+    # `gh attestation verify oci://…:<tag>` resolves the tag to the index digest,
+    # finds no attestation for it, and fails. That is exactly how this shipped
+    # once; the assertion at the end of the retag step is what makes a repeat
+    # loud instead of silent.
+    #
+    # So the manifest is copied at the registry level: fetch the bytes by digest,
+    # PUT the identical bytes under each new tag. A registry derives a manifest's
+    # digest from its bytes, so unchanged bytes mean an unchanged digest.
     #
     # Two uses:
     #   - Backfilling a release whose tag predates this workflow — `v0.3` has no
@@ -87,17 +100,12 @@ jobs:
         env:
             IMAGE: ghcr.io/${{ github.repository }}
         steps:
-            - name: log in to GHCR
-              uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-              with:
-                  registry: ghcr.io
-                  username: ${{ github.actor }}
-                  password: ${{ secrets.GITHUB_TOKEN }}
-
             - name: retag
               env:
                   DIGEST: ${{ inputs.promote_digest }}
                   TAGS: ${{ inputs.promote_tags }}
+                  TOKEN_USER: ${{ github.actor }}
+                  TOKEN_PASS: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   set -euo pipefail
                   if [ -z "$TAGS" ]; then
@@ -108,28 +116,73 @@ jobs:
                       sha256:*) ;;
                       *) echo "::error::promote_digest must be a sha256:… digest, got '$DIGEST'." >&2; exit 1 ;;
                   esac
-                  # Fail loudly if the digest isn't in this registry, rather than
-                  # letting imagetools emit something confusing.
-                  docker buildx imagetools inspect "${IMAGE}@${DIGEST}" >/dev/null
 
-                  ARGS=()
+                  # GHCR path components must be lowercase. `tr` rather than
+                  # ${VAR,,} so this stays runnable under bash 3.x (macOS), which
+                  # is where it gets exercised outside CI.
+                  REPO="$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+
+                  TOKEN="$(curl -fsSL -u "${TOKEN_USER}:${TOKEN_PASS}" \
+                      "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull,push" \
+                      | jq -r .token)"
+
+                  # Every manifest media type we might be promoting: a plain
+                  # single-platform image today, an index if this ever goes
+                  # multi-arch. Without these Accept headers the registry may hand
+                  # back a converted manifest — different bytes, different digest.
+                  ACCEPT='application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json'
+
+                  HDR="$RUNNER_TEMP/headers.txt"
+                  MAN="$RUNNER_TEMP/manifest.json"
+                  # -f so a digest that isn't in this registry fails here, loudly.
+                  curl -fsSL -D "$HDR" -o "$MAN" \
+                      -H "Authorization: Bearer $TOKEN" -H "Accept: $ACCEPT" \
+                      "https://ghcr.io/v2/${REPO}/manifests/${DIGEST}"
+
+                  CT="$(tr -d '\r' < "$HDR" | awk 'tolower($1) == "content-type:" { print $2 }' | tail -1)"
+                  if [ -z "$CT" ]; then
+                      echo "::error::registry returned no Content-Type for ${DIGEST}." >&2
+                      exit 1
+                  fi
+                  echo "manifest: $CT ($(wc -c < "$MAN") bytes)"
+
                   IFS=',' read -ra PARTS <<< "$TAGS"
+                  APPLIED=()
                   for t in "${PARTS[@]}"; do
                       t="$(echo "$t" | tr -d '[:space:]')"
                       [ -n "$t" ] || continue
-                      ARGS+=(--tag "${IMAGE}:${t}")
+                      PUSHED="$(curl -fsSL -X PUT -D - -o /dev/null \
+                          -H "Authorization: Bearer $TOKEN" -H "Content-Type: $CT" \
+                          --data-binary "@$MAN" \
+                          "https://ghcr.io/v2/${REPO}/manifests/${t}" \
+                          | tr -d '\r' | awk 'tolower($1) == "docker-content-digest:" { print $2 }' | tail -1)"
+                      # The whole point of this job. If the registry stored
+                      # something under a different digest then the tag is not
+                      # covered by the attestation, and shipping it would be worse
+                      # than not promoting at all.
+                      if [ "$PUSHED" != "$DIGEST" ]; then
+                          echo "::error::retagging ${t} changed the digest (${DIGEST} -> ${PUSHED:-unknown}) — tag would not be covered by the attestation." >&2
+                          exit 1
+                      fi
+                      echo "${IMAGE}:${t} -> ${PUSHED}"
+                      APPLIED+=("$t")
                   done
-                  docker buildx imagetools create "${ARGS[@]}" "${IMAGE}@${DIGEST}"
+
+                  if [ ${#APPLIED[@]} -eq 0 ]; then
+                      echo "::error::promote_tags contained no usable tag names." >&2
+                      exit 1
+                  fi
 
                   {
                       echo "### Promoted"
                       echo
                       echo "\`${IMAGE}@${DIGEST}\` is now also tagged:"
                       echo
-                      for t in "${PARTS[@]}"; do
-                          t="$(echo "$t" | tr -d '[:space:]')"
-                          [ -n "$t" ] && echo "- \`${IMAGE}:${t}\`"
+                      for t in "${APPLIED[@]}"; do
+                          echo "- \`${IMAGE}:${t}\`"
                       done
+                      echo
+                      echo "Digest preserved, so the existing provenance attestation covers all of them."
                   } >> "$GITHUB_STEP_SUMMARY"
 
     publish:
