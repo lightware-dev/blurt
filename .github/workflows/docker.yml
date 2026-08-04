@@ -42,6 +42,15 @@ on:
             - 'requirements.txt'
             - '.github/workflows/docker.yml'
     workflow_dispatch:
+        inputs:
+            promote_digest:
+                description: 'Promote an existing digest (sha256:…) instead of building. Empty = normal build.'
+                required: false
+                default: ''
+            promote_tags:
+                description: 'Comma-separated tags to point at that digest, e.g. 0.3,latest'
+                required: false
+                default: ''
 
 # NOTE: path filters are ignored for tag pushes, so `v*` tags always run —
 # exactly what we want for cutting a release.
@@ -53,7 +62,79 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
+    # Point extra tags at an image that already exists, without rebuilding it.
+    #
+    # This is a *retag*, not a rebuild: `imagetools create` copies the manifest,
+    # so the digest is unchanged and the provenance attestation already attached
+    # to it keeps covering the promoted tags (attestations are keyed by digest,
+    # not by tag). A rebuild would produce a different digest for identical
+    # inputs and split the attestation across two images.
+    #
+    # Two uses:
+    #   - Backfilling a release whose tag predates this workflow — `v0.3` has no
+    #     docker.yml in its tree, so it cannot be dispatched directly (a
+    #     workflow_dispatch needs the file present on the ref it runs against).
+    #   - Promoting a soaked :edge image to a release tag without rebuilding it,
+    #     so what you ship is the artifact you actually tested.
+    promote:
+        if: github.event_name == 'workflow_dispatch' && inputs.promote_digest != ''
+        runs-on: ubuntu-latest
+        name: Promote an existing digest
+        timeout-minutes: 10
+        permissions:
+            contents: read
+            packages: write
+        env:
+            IMAGE: ghcr.io/${{ github.repository }}
+        steps:
+            - name: log in to GHCR
+              uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: retag
+              env:
+                  DIGEST: ${{ inputs.promote_digest }}
+                  TAGS: ${{ inputs.promote_tags }}
+              run: |
+                  set -euo pipefail
+                  if [ -z "$TAGS" ]; then
+                      echo "::error::promote_digest was given without promote_tags — nothing to point at it." >&2
+                      exit 1
+                  fi
+                  case "$DIGEST" in
+                      sha256:*) ;;
+                      *) echo "::error::promote_digest must be a sha256:… digest, got '$DIGEST'." >&2; exit 1 ;;
+                  esac
+                  # Fail loudly if the digest isn't in this registry, rather than
+                  # letting imagetools emit something confusing.
+                  docker buildx imagetools inspect "${IMAGE}@${DIGEST}" >/dev/null
+
+                  ARGS=()
+                  IFS=',' read -ra PARTS <<< "$TAGS"
+                  for t in "${PARTS[@]}"; do
+                      t="$(echo "$t" | tr -d '[:space:]')"
+                      [ -n "$t" ] || continue
+                      ARGS+=(--tag "${IMAGE}:${t}")
+                  done
+                  docker buildx imagetools create "${ARGS[@]}" "${IMAGE}@${DIGEST}"
+
+                  {
+                      echo "### Promoted"
+                      echo
+                      echo "\`${IMAGE}@${DIGEST}\` is now also tagged:"
+                      echo
+                      for t in "${PARTS[@]}"; do
+                          t="$(echo "$t" | tr -d '[:space:]')"
+                          [ -n "$t" ] && echo "- \`${IMAGE}:${t}\`"
+                      done
+                  } >> "$GITHUB_STEP_SUMMARY"
+
     publish:
+        # A dispatch that asks for a promotion must not also rebuild.
+        if: github.event_name != 'workflow_dispatch' || inputs.promote_digest == ''
         runs-on: ubuntu-latest
         name: Build & push blurtd image
         # A cold build (nothing cached, both pip installs from scratch) measured
