@@ -105,11 +105,13 @@ final class HUD {
     }
 
     /// Briefly show a dimmed status message (e.g. "Cancelled"), then auto-hide —
-    /// unless a newer session has since taken over the HUD.
-    func flash(_ text: String) {
+    /// unless a newer session has since taken over the HUD. The default suits an
+    /// acknowledgement the user already expects; something they have to *read*
+    /// (a connection failure) needs longer.
+    func flash(_ text: String, for seconds: TimeInterval = 0.3) {
         DispatchQueue.main.async {
             let token = self.present(.flash(text))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
                 if self.generation == token { self.window?.orderOut(nil) }
             }
         }

@@ -219,6 +219,13 @@ internal static class CertTrust
     /// it serves `wss://` on, so a plain GET at the origin root reaches the same
     /// listener with the same certificate. The token is dropped along with the
     /// path — the handshake is the whole point.
+    /// Whether <see cref="PreflightAsync"/> will actually open a connection for
+    /// this URL. False for `ws://`, which has no certificate to inspect and so
+    /// reports <see cref="Outcome.Ok"/> without touching the network — an answer
+    /// about trust, not about whether anything is listening. Callers reading
+    /// reachability out of an <see cref="Outcome"/> have to check this first.
+    public static bool ProbesReachability(string url) => ProbeUri(url) is not null;
+
     private static Uri? ProbeUri(string url)
     {
         if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var parsed)) return null;

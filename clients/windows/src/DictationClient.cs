@@ -14,12 +14,33 @@ namespace Blurt;
 /// on a background thread — the app marshals them onto the UI thread.
 internal sealed class DictationClient
 {
+    /// How long the server gets to say hello before we call it unreachable.
+    ///
+    /// The protocol has the server send `info` the instant the socket opens, so
+    /// a live blurtd answers in milliseconds. A dead one, though, does not
+    /// reliably *refuse*: a host asleep behind a VPN, a port forwarded to
+    /// nothing, a daemon still coming up — all of those swallow the connection
+    /// and then say nothing, and ConnectAsync will wait far longer than anyone
+    /// keeps talking. That wait used to pass with the mic live and the HUD
+    /// reading "Listening…", so the dictation went into a socket that was never
+    /// going to answer. Generous enough for a slow link, short enough that
+    /// nobody gets through a sentence first. (Mirrors the Swift twin.)
+    private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(3);
+
     public Action<string, string>? OnPartial; // (committed, live) — live may still be revised
     public Action<string>? OnFinal;
     public Action<bool>? OnVad;               // server-side VAD: is it hearing speech?
     public Action<string, string>? OnInfo;    // (state "ready|loading", model)
     public Action<string, string?>? OnStatus; // (state, detail)
     public Action<string>? OnError;
+    /// The server's first message — the only proof that dictation can actually
+    /// happen. Fires once per connection, ahead of the message's own callback.
+    public Action? OnConnected;
+    /// The server never got as far as speaking: nothing is listening, the host
+    /// is unreachable, or it accepted the connection and went quiet. Kept apart
+    /// from <see cref="OnError"/> because the cause is specific and the fix is
+    /// actionable — start blurtd — where a mid-dictation drop is neither.
+    public Action<string>? OnUnreachable;
 
     /// Why the last handshake was refused, when it was refused over the server's
     /// certificate. A rejected TLS handshake surfaces to <see cref="OnError"/> as
@@ -31,6 +52,15 @@ internal sealed class DictationClient
     private ClientWebSocket? _socket;
     private CancellationTokenSource? _cts;
     private volatile bool _closing;
+    /// Whether anything has come back from the server on this connection. Until
+    /// it has, we have no evidence of a blurtd on the other end — TCP and TLS
+    /// both succeed against plenty of things that will never transcribe
+    /// anything.
+    private volatile bool _serverSpoke;
+    /// 0/1 via Interlocked: a dying connection can fail several ways at once —
+    /// the receive loop, the handshake watchdog, every queued send — and the
+    /// user needs to hear about it once.
+    private int _reportedFailure;
     // Written on the UI thread by ConnectAndStart, read on the receive-loop
     // thread by Handle — volatile so the reader can't see a stale value.
     private volatile string _dictationId = "";
@@ -55,6 +85,8 @@ internal sealed class DictationClient
         }
 
         _closing = false;
+        _serverSpoke = false;
+        _reportedFailure = 0;
         _dictationId = Guid.NewGuid().ToString("N");
         _cts = new CancellationTokenSource();
         CertRejection = null;
@@ -85,6 +117,31 @@ internal sealed class DictationClient
         _socket = socket;
 
         _ = RunAsync(socket, url, _cts.Token);
+        _ = WatchdogAsync(_cts.Token);
+    }
+
+    /// Give up on a server that took the connection — or never even refused it —
+    /// and then said nothing. A no-op once its first message has landed.
+    private async Task WatchdogAsync(CancellationToken ct)
+    {
+        try { await Task.Delay(HandshakeTimeout, ct).ConfigureAwait(false); }
+        catch (OperationCanceledException) { return; }
+        if (_serverSpoke) return;
+        ReportFailure($"No reply within {(int)HandshakeTimeout.TotalSeconds} seconds.");
+    }
+
+    /// Report a dead connection once, tear the socket down, and route it by
+    /// whether the server ever spoke: silence from the start is an unreachable
+    /// server, a drop after it spoke is a lost connection.
+    private void ReportFailure(string message)
+    {
+        // A deliberate Close() fails everything in flight; that's not an error.
+        if (_closing) return;
+        if (Interlocked.Exchange(ref _reportedFailure, 1) != 0) return;
+        var spoke = _serverSpoke;
+        Close();
+        if (spoke) OnError?.Invoke(message);
+        else OnUnreachable?.Invoke(message);
     }
 
     private static string BuildUrl()
@@ -112,8 +169,8 @@ internal sealed class DictationClient
         catch (Exception ex)
         {
             // A deliberate Close() cancels the socket, which surfaces here — don't
-            // report that as an error (mirrors the Swift `closing` guard).
-            if (!_closing) OnError?.Invoke(ex.Message);
+            // report that as an error (ReportFailure's `closing` guard).
+            ReportFailure(ex.Message);
         }
     }
 
@@ -134,13 +191,17 @@ internal sealed class DictationClient
         var ct = _cts?.Token ?? CancellationToken.None;
         if (socket is null) return;
         await _sendGate.WaitAsync(ct).ConfigureAwait(false);
+        string? failure = null;
         try
         {
             if (socket.State == WebSocketState.Open)
                 await socket.SendAsync(frame, WebSocketMessageType.Binary, true, ct).ConfigureAwait(false);
         }
-        catch { /* transient send failure; the receive loop will surface a real error */ }
+        catch (Exception ex) { failure = ex.Message; }
         finally { _sendGate.Release(); }
+        // Reported outside the gate: ReportFailure ends up marshalling onto the
+        // UI thread, and nothing that slow belongs inside the send lock.
+        if (failure is not null) ReportFailure(failure);
     }
 
     /// Ask the server to finalize; it replies with a {final} message.
@@ -162,13 +223,15 @@ internal sealed class DictationClient
         if (socket is null) return;
         var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(obj));
         await _sendGate.WaitAsync(ct).ConfigureAwait(false);
+        string? failure = null;
         try
         {
             if (socket.State == WebSocketState.Open)
                 await socket.SendAsync(bytes, WebSocketMessageType.Text, true, ct).ConfigureAwait(false);
         }
-        catch { /* ignore */ }
+        catch (Exception ex) { failure = ex.Message; }
         finally { _sendGate.Release(); }
+        if (failure is not null) ReportFailure(failure);
     }
 
     private async Task ReceiveLoopAsync(ClientWebSocket socket, CancellationToken ct)
@@ -184,9 +247,11 @@ internal sealed class DictationClient
                 // Memory<byte> overload would instead return a ValueWebSocketReceiveResult.
                 result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), ct).ConfigureAwait(false);
             }
-            catch
+            catch (Exception ex)
             {
-                if (!_closing) OnError?.Invoke("Connection lost");
+                // Once the server has spoken, WebSocketException's own wording adds
+                // nothing the user can act on; before it has, the cause matters.
+                ReportFailure(_serverSpoke ? "Connection lost" : ex.Message);
                 return;
             }
 
@@ -208,6 +273,14 @@ internal sealed class DictationClient
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             if (!root.TryGetProperty("type", out var typeEl)) return;
+            // Anything at all from the server proves a blurtd is on the other
+            // end. Noted before the id filter below, since even a message we go
+            // on to drop is evidence the connection is alive.
+            if (!_serverSpoke)
+            {
+                _serverSpoke = true;
+                OnConnected?.Invoke();
+            }
             // Drop messages from a dictation that isn't ours (a late final from
             // a previous session would otherwise get typed into the wrong
             // context). Connection-scoped messages like info carry no id.

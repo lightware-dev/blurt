@@ -174,6 +174,16 @@ Asks for a fresh `info` (e.g. to poll whether the model finished loading).
 - `audio` — the server's canonical format (what you get if you declare
   nothing).
 
+`info` is sent **unprompted, the moment the socket opens**, and that timing is
+load-bearing: it is the only thing that tells a client it reached a real blurtd
+rather than something that merely accepts TCP. Blurt's desktop clients hold the
+HUD on "Connecting…" until it lands and give up after 3 seconds without it —
+plenty of ways to fail (a host asleep behind a VPN, a port forwarded to nothing,
+a daemon still starting) complete the handshake and then say nothing, and a
+client that assumes otherwise streams a whole dictation into a socket that will
+never answer. Send it before anything else, including while the model is still
+loading.
+
 #### `status`
 
 ```json

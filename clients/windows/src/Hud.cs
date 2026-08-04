@@ -97,8 +97,10 @@ internal sealed class Hud
     }
 
     /// Briefly show a dimmed status message (e.g. "Cancelled"), then auto-hide —
-    /// unless a newer session has since taken over the HUD.
-    public void Flash(string text)
+    /// unless a newer session has since taken over the HUD. The default suits an
+    /// acknowledgement the user already expects; something they have to *read*
+    /// (a connection failure) needs longer.
+    public void Flash(string text, TimeSpan? duration = null)
     {
         _generation++;
         var token = _generation;
@@ -117,7 +119,7 @@ internal sealed class Hud
         Position();
         _window!.Show();
 
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        var timer = new DispatcherTimer { Interval = duration ?? TimeSpan.FromMilliseconds(300) };
         timer.Tick += (_, _) =>
         {
             timer.Stop();

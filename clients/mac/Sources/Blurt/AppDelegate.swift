@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var doubleTap: ModifierDoubleTap?
     private var toggleItem: NSMenuItem?
     private var copyLastItem: NSMenuItem?
+    // Shown only while the server is known to be down (see setServerReachable).
+    private var serverDownItem: NSMenuItem?
+    private var serverDownSeparator: NSMenuItem?
     // Registered only while recording so it never swallows Esc globally otherwise.
     private var cancelKey: HotKey?
 
@@ -23,12 +26,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // True while a certificate pre-flight is in flight, so a second trigger can't
     // stack another probe (and another dialog) on top of the first.
     private var preflighting = false
+    // True while an alert is on screen. A global hotkey still fires over a modal,
+    // so without this an impatient second press against a server that's down
+    // starts a dictation behind the dialog telling you it's down — and stacks a
+    // second copy of that dialog when it fails too.
+    private var alerting = false
     // Live protocol state for the HUD: the latest structured partial, whether the
     // server's VAD currently hears speech, and whether the model is still loading.
     private var partialCommitted = ""
     private var partialLive = ""
     private var serverHearing = false
     private var serverLoading = false
+    // Whether the server has said anything on this connection. Until it has,
+    // the HUD must not claim to be listening: the mic is live, but nothing is
+    // receiving it.
+    private var serverAcked = false
+    // The last thing we learned about whether the server answers at all — from
+    // a certificate pre-flight or a dictation. Nil until something has tried.
+    // Drives the menu bar, so a dead daemon is visible *before* the hotkey is
+    // pressed and not only after a dictation has been spoken into the void.
+    private var serverReachable: Bool?
     private var onboarding: OnboardingWindowController?
     private var settingsWindow: SettingsWindowController?
 
@@ -55,7 +72,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// would start recording behind it.
     private func checkServerCertificate() {
         preflighting = true
-        CertTrust.preflight(Settings.serverURL) { [weak self] _ in self?.preflighting = false }
+        CertTrust.preflight(Settings.serverURL) { [weak self] outcome in
+            guard let self else { return }
+            self.preflighting = false
+            self.noteProbe(outcome)
+        }
+    }
+
+    /// Fold what a pre-flight learned into the menu bar's picture of the server.
+    /// The probe already opens a connection, so it knows whether anything is
+    /// listening — dropping that on the floor is why a stopped daemon stayed
+    /// invisible until a dictation had already been lost to it.
+    private func noteProbe(_ outcome: CertTrust.Outcome) {
+        guard CertTrust.probesReachability(Settings.serverURL) else { return }
+        setServerReachable(outcome != .unreachable)
+    }
+
+    /// Record whether the server answers, and reflect it in the menu bar: a
+    /// dimmed icon plus a line naming the host that isn't responding.
+    private func setServerReachable(_ reachable: Bool) {
+        guard serverReachable != reachable else { return }
+        serverReachable = reachable
+        updateIcon()
+        updateServerDownItem()
+    }
+
+    /// `host:port` for the configured server — what to name in a message about
+    /// it failing, rather than the whole `wss://…/ws` URL.
+    private static func serverLabel() -> String {
+        guard let url = URL(string: Settings.serverURL), let host = url.host else {
+            return Settings.serverURL
+        }
+        guard let port = url.port else { return host }
+        return "\(host):\(port)"
     }
 
     // MARK: menu bar
@@ -68,6 +117,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Manage the "Copy Last Dictation" enabled state ourselves; otherwise the
         // default auto-enabling would keep it clickable before anything's captured.
         menu.autoenablesItems = false
+        // First, above everything, and hidden unless it applies: if the server
+        // is down there is nothing else worth reading in here.
+        let down = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        down.isEnabled = false
+        menu.addItem(down)
+        let downSeparator = NSMenuItem.separator()
+        menu.addItem(downSeparator)
+        serverDownItem = down
+        serverDownSeparator = downSeparator
+        updateServerDownItem()
         toggleItem = add(menu, "Start / Stop Blurting", #selector(toggle))
         copyLastItem = add(menu, "Copy Last Dictation", #selector(copyLastDictation))
         copyLastItem?.isEnabled = false
@@ -95,6 +154,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // recording so the menu bar shows "blurting" at a glance.
         button.image = Brand.menuBarIcon(tint: recording ? Brand.coral : nil)
         button.contentTintColor = nil
+        // Faded while the server is known to be down — the same "connected or
+        // not" idiom every other sync-something-to-a-server menu bar app uses.
+        // Never while recording: the coral mark has to stay unambiguous.
+        let down = !recording && serverReachable == false
+        button.alphaValue = down ? 0.4 : 1
+        button.toolTip = down ? "Blurt — can't reach \(Self.serverLabel())" : "Blurt"
+    }
+
+    private func updateServerDownItem() {
+        let down = serverReachable == false
+        serverDownItem?.title = "Can't reach \(Self.serverLabel())"
+        serverDownItem?.isHidden = !down
+        serverDownSeparator?.isHidden = !down
     }
 
     // MARK: wiring
@@ -102,6 +174,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func wire() {
         audio.onFrame = { [weak self] data in self?.client.sendAudio(data) }
         audio.onSpectrum = { [weak self] bands in self?.hud.spectrum(bands) }
+        // The server's first word. Only now is the HUD entitled to say it's
+        // listening, and only now do we know the daemon is up.
+        client.onConnected = { [weak self] in
+            self?.serverAcked = true
+            self?.setServerReachable(true)
+            self?.renderHUD()
+        }
         client.onPartial = { [weak self] committed, live in
             self?.partialCommitted = committed
             self?.partialLive = live
@@ -147,28 +226,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let first = detail?.split(separator: "\n").first.map(String.init)
             self?.notify("Dictation server error", first ?? "The server could not transcribe. Try again, and restart the server if it persists.")
         }
-        client.onError = { [weak self] msg in
-            guard let self else { return }
-            self.hud.hide()
-            self.forceStop()
-            // A refused certificate arrives here as an opaque TLS failure. Say
-            // what really happened and offer to pin it — the fingerprint is
-            // already in hand, so this needs no second handshake. Reaching this
-            // means the certificate changed since the pre-flight; the next
-            // trigger connects.
-            if let rejection = self.client.certRejection {
-                // Either way this dictation is gone, so say so rather than
-                // letting the HUD vanish with no explanation.
-                if CertTrust.promptAndPin(rejection.decision, host: rejection.host, port: rejection.port) {
-                    self.notify("Certificate trusted", "Press the shortcut again to dictate.")
-                } else {
-                    self.notify("Connection refused",
-                                "The certificate for \(rejection.host) isn't trusted, so Blurt didn't connect.")
-                }
-                return
-            }
-            self.notify("Connection error", msg)
+        client.onUnreachable = { [weak self] detail in
+            self?.connectionFailed(detail, unreachable: true)
         }
+        client.onError = { [weak self] msg in
+            self?.connectionFailed(msg, unreachable: false)
+        }
+    }
+
+    /// Every way a dictation's connection can die ends here: stop recording,
+    /// then say what happened. `unreachable` means the server never spoke at
+    /// all, which has one overwhelmingly likely cause worth naming outright.
+    private func connectionFailed(_ detail: String, unreachable: Bool) {
+        forceStop()
+        // A refused certificate arrives here as an opaque TLS failure. Say
+        // what really happened and offer to pin it — the fingerprint is
+        // already in hand, so this needs no second handshake. Reaching this
+        // means the certificate changed since the pre-flight; the next
+        // trigger connects.
+        if let rejection = client.certRejection {
+            hud.hide()
+            // Either way this dictation is gone, so say so rather than
+            // letting the HUD vanish with no explanation.
+            if CertTrust.promptAndPin(rejection.decision, host: rejection.host, port: rejection.port) {
+                notify("Certificate trusted", "Press the shortcut again to dictate.")
+            } else {
+                notify("Connection refused",
+                       "The certificate for \(rejection.host) isn't trusted, so Blurt didn't connect.")
+            }
+            return
+        }
+        guard unreachable else {
+            hud.hide()
+            notify("Connection error", detail)
+            return
+        }
+        setServerReachable(false)
+        // Put the diagnosis in the HUD before the alert. The HUD is the one
+        // surface guaranteed to be in front of the user — it follows them onto
+        // full-screen spaces, which an alert from a menu bar agent does not —
+        // and it's where they were already looking for their words.
+        hud.flash("Can't reach the server", for: 2.5)
+        notify("Can't reach the Blurt server",
+               """
+               Nothing answered at \(Self.serverLabel()), so this dictation was lost. \
+               Check that blurtd is running there, then press \
+               \(ShortcutLabel.current().isEmpty ? "the shortcut" : ShortcutLabel.current()) again.
+
+               (\(detail))
+               """)
     }
 
     /// (Re)arm the dictation trigger from Settings.shortcutMode, and reflect the
@@ -245,7 +351,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// otherwise a placeholder that reflects what the server is actually doing.
     private func renderHUD() {
         guard recording else { return }
-        let placeholder = serverLoading ? "Loading model…"
+        // "Connecting…" until the server has actually answered. Saying
+        // "Listening…" over a socket nobody is on the other end of is the whole
+        // reason a stopped daemon could go unnoticed for a minute at a time.
+        let placeholder = !serverAcked  ? "Connecting…"
+                        : serverLoading ? "Loading model…"
                         : serverHearing ? "Hearing you…"
                         : "Listening…"
         hud.show(committed: partialCommitted, live: partialLive, placeholder: placeholder)
@@ -254,7 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: dictation state machine
 
     @objc private func toggle() {
-        guard !preflighting else { return }
+        guard !preflighting, !alerting else { return }
         recording ? stopRecording() : startRecording()
     }
 
@@ -270,6 +380,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CertTrust.preflight(Settings.serverURL) { [weak self] outcome in
             guard let self else { return }
             self.preflighting = false
+            self.noteProbe(outcome)
             // `.unreachable` falls through to a normal connection attempt, so an
             // offline server still gives the usual error rather than silence.
             guard outcome != .refused else { return }
@@ -283,6 +394,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         partialLive = ""
         serverHearing = false
         serverLoading = false
+        serverAcked = false
         client.connectAndStart()
         do {
             try audio.start()
@@ -297,7 +409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // capture Esc while actually listening. keyCode 53 = Escape, no modifiers.
         cancelKey = HotKey(keyCode: 53, modifiers: 0, id: 2) { [weak self] in self?.cancel() }
         hud.hearing(false)   // muted until the server reports it hears speech
-        hud.show("")         // empty → HUD shows its faded "Listening…" placeholder
+        renderHUD()          // no text yet → the faded "Connecting…" placeholder
     }
 
     private func stopRecording() {
@@ -332,6 +444,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = title
         alert.informativeText = body
         NSApp.activate(ignoringOtherApps: true)
+        alerting = true
         alert.runModal()
+        alerting = false
     }
 }

@@ -22,6 +22,9 @@ internal sealed class BlurtApp : IDisposable
 
     private NotifyIcon? _tray;
     private ToolStripMenuItem? _toggleItem;
+    // Shown only while the server is known to be down (see SetServerReachable).
+    private ToolStripMenuItem? _serverDownItem;
+    private ToolStripSeparator? _serverDownSeparator;
     private ToolStripMenuItem? _startupItem;
     private ToolStripMenuItem? _copyLastItem;
     private HotKey? _hotKey;
@@ -47,6 +50,15 @@ internal sealed class BlurtApp : IDisposable
     private string _partialLive = "";
     private bool _serverHearing;
     private bool _serverLoading;
+    // Whether the server has said anything on this connection. Until it has, the
+    // HUD must not claim to be listening: the mic is live, but nothing is
+    // receiving it.
+    private bool _serverAcked;
+    // The last thing we learned about whether the server answers at all — from a
+    // certificate pre-flight or a dictation. Null until something has tried.
+    // Drives the tray, so a dead daemon is visible *before* the hotkey is
+    // pressed and not only after a dictation has been spoken into the void.
+    private bool? _serverReachable;
 
     public BlurtApp(Application app)
     {
@@ -84,6 +96,12 @@ internal sealed class BlurtApp : IDisposable
     private void SetupTray()
     {
         var menu = new ContextMenuStrip();
+        // First, above everything, and hidden unless it applies: if the server is
+        // down there is nothing else worth reading in here.
+        _serverDownItem = new ToolStripMenuItem("") { Enabled = false, Visible = false };
+        menu.Items.Add(_serverDownItem);
+        _serverDownSeparator = new ToolStripSeparator { Visible = false };
+        menu.Items.Add(_serverDownSeparator);
         // Label gets the active shortcut appended by ApplyShortcut().
         _toggleItem = new ToolStripMenuItem("Start / Stop Blurting", null, (_, _) => Toggle());
         menu.Items.Add(_toggleItem);
@@ -125,6 +143,52 @@ internal sealed class BlurtApp : IDisposable
         _tray.Icon = next;
         _currentIcon?.Dispose();
         _currentIcon = next;
+        // The hover text carries what the icon can't: whether the server is
+        // there. Truncated because NotifyIcon.Text throws past 63 characters, and
+        // a long enough hostname would get there.
+        var tip = _serverReachable == false ? $"Blurt — can't reach {ServerLabel()}" : "Blurt";
+        _tray.Text = tip.Length <= 63 ? tip : tip[..63];
+    }
+
+    private void UpdateServerDownItem()
+    {
+        var down = _serverReachable == false;
+        if (_serverDownItem is not null)
+        {
+            _serverDownItem.Text = $"Can't reach {ServerLabel()}";
+            _serverDownItem.Visible = down;
+        }
+        if (_serverDownSeparator is not null) _serverDownSeparator.Visible = down;
+    }
+
+    /// Record whether the server answers, and reflect it in the tray: the hover
+    /// text plus a line naming the host that isn't responding.
+    private void SetServerReachable(bool reachable)
+    {
+        if (_serverReachable == reachable) return;
+        _serverReachable = reachable;
+        UpdateIcon();
+        UpdateServerDownItem();
+    }
+
+    /// Fold what a pre-flight learned into the tray's picture of the server. The
+    /// probe already opens a connection, so it knows whether anything is
+    /// listening — dropping that on the floor is why a stopped daemon stayed
+    /// invisible until a dictation had already been lost to it.
+    private void NoteProbe(CertTrust.Outcome outcome)
+    {
+        if (!CertTrust.ProbesReachability(Settings.ServerUrl)) return;
+        SetServerReachable(outcome != CertTrust.Outcome.Unreachable);
+    }
+
+    /// `host:port` for the configured server — what to name in a message about
+    /// it failing, rather than the whole `wss://…/ws` URL.
+    private static string ServerLabel()
+    {
+        var url = Settings.ServerUrl.Trim();
+        return Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+            ? $"{parsed.Host}:{CertTrust.Port(parsed)}"
+            : url;
     }
 
     // MARK: wiring
@@ -135,6 +199,16 @@ internal sealed class BlurtApp : IDisposable
         // Non-blocking (InvokeAsync): the spectrum fires on the audio thread ~10×/s
         // and mustn't stall mic capture waiting on the UI. Mirrors DispatchQueue.main.async.
         _audio.OnSpectrum = bands => _ui.InvokeAsync(() => _hud.Spectrum(bands));
+
+        // The server's first word. Only now is the HUD entitled to say it's
+        // listening, and only now do we know the daemon is up.
+        _client.OnConnected = () => _ui.Invoke(() =>
+        {
+            if (_client.Closing) return;
+            _serverAcked = true;
+            SetServerReachable(true);
+            RenderHud();
+        });
 
         // Skip a partial that arrives after teardown has begun — it would resurrect
         // the HUD after a "Cancelled" flash (matches the Swift `closing` guard).
@@ -195,27 +269,47 @@ internal sealed class BlurtApp : IDisposable
                     ? "The server could not transcribe. Try again, and restart the server if it persists."
                     : first);
         });
-        _client.OnError = msg => _ui.Invoke(() =>
+        _client.OnUnreachable = detail => _ui.Invoke(() => ConnectionFailed(detail, unreachable: true));
+        _client.OnError = msg => _ui.Invoke(() => ConnectionFailed(msg, unreachable: false));
+    }
+
+    /// Every way a dictation's connection can die ends here: stop recording, then
+    /// say what happened. `unreachable` means the server never spoke at all,
+    /// which has one overwhelmingly likely cause worth naming outright.
+    private void ConnectionFailed(string detail, bool unreachable)
+    {
+        ForceStop();
+        // A refused certificate arrives here as an opaque TLS failure. Say what
+        // really happened and offer to pin it — the fingerprint is already in
+        // hand, so this needs no second handshake. Reaching this means the
+        // certificate changed since the pre-flight; the next trigger connects.
+        if (_client.CertRejection is { } rejection)
         {
             _hud.Hide();
-            ForceStop();
-            // A refused certificate arrives here as an opaque TLS failure. Say what
-            // really happened and offer to pin it — the fingerprint is already in
-            // hand, so this needs no second handshake. Reaching this means the
-            // certificate changed since the pre-flight; the next trigger connects.
-            if (_client.CertRejection is { } rejection)
-            {
-                // Either way this dictation is gone, so say so rather than
-                // letting the HUD vanish with no explanation.
-                if (CertTrust.PromptAndPin(rejection))
-                    Notify("Certificate trusted", "Press the shortcut again to dictate.");
-                else
-                    Notify("Connection refused",
-                        $"The certificate for {rejection.Host} isn't trusted, so Blurt didn't connect.");
-                return;
-            }
-            Notify("Connection error", msg);
-        });
+            // Either way this dictation is gone, so say so rather than
+            // letting the HUD vanish with no explanation.
+            if (CertTrust.PromptAndPin(rejection))
+                Notify("Certificate trusted", "Press the shortcut again to dictate.");
+            else
+                Notify("Connection refused",
+                    $"The certificate for {rejection.Host} isn't trusted, so Blurt didn't connect.");
+            return;
+        }
+        if (!unreachable)
+        {
+            _hud.Hide();
+            Notify("Connection error", detail);
+            return;
+        }
+        SetServerReachable(false);
+        // Put the diagnosis in the HUD before the balloon. The HUD is the one
+        // surface guaranteed to be in front of the user, and it's where they were
+        // already looking for their words.
+        _hud.Flash("Can't reach the server", TimeSpan.FromSeconds(2.5));
+        var shortcut = ShortcutLabel.Current();
+        Notify("Can't reach the Blurt server",
+            $"Nothing answered at {ServerLabel()}, so this dictation was lost. Check that blurtd " +
+            $"is running there, then press {(shortcut.Length == 0 ? "the shortcut" : shortcut)} again.");
     }
 
     /// (Re)arm the dictation trigger from Settings.Shortcut, and reflect the active
@@ -259,7 +353,11 @@ internal sealed class BlurtApp : IDisposable
     private void RenderHud()
     {
         if (!_recording) return;
-        var placeholder = _serverLoading ? "Loading model…"
+        // "Connecting…" until the server has actually answered. Saying
+        // "Listening…" over a socket nobody is on the other end of is the whole
+        // reason a stopped daemon could go unnoticed for a minute at a time.
+        var placeholder = !_serverAcked  ? "Connecting…"
+                        : _serverLoading ? "Loading model…"
                         : _serverHearing ? "Hearing you…"
                         : "Listening…";
         _hud.Show(_partialCommitted, _partialLive, placeholder);
@@ -298,6 +396,7 @@ internal sealed class BlurtApp : IDisposable
         _ui.Invoke(() =>
         {
             _preflighting = false;
+            NoteProbe(outcome);
             // Unreachable falls through to a normal connection attempt, so an
             // offline server still gives the usual error rather than silence.
             if (outcome != CertTrust.Outcome.Refused) BeginRecording();
@@ -311,6 +410,7 @@ internal sealed class BlurtApp : IDisposable
         _partialLive = "";
         _serverHearing = false;
         _serverLoading = false;
+        _serverAcked = false;
         _client.ConnectAndStart();
         try
         {
@@ -327,7 +427,7 @@ internal sealed class BlurtApp : IDisposable
         // Esc discards the in-flight dictation. Registered per-session so we only
         // capture Esc while actually listening.
         _cancelKey = HotKey.Escape(() => _ui.Invoke(Cancel));
-        _hud.Show("");        // empty → HUD shows its faded "Listening…" placeholder
+        RenderHud();          // no text yet → the faded "Connecting…" placeholder
         _hud.Hearing(false);  // muted until the server reports it hears speech
     }
 
@@ -432,9 +532,14 @@ internal sealed class BlurtApp : IDisposable
 
     private async Task CheckServerCertificateAsync()
     {
-        try { await CertTrust.PreflightAsync(Settings.ServerUrl).ConfigureAwait(false); }
-        catch { /* nothing to report: this check is silent unless it prompts */ }
-        _ui.Invoke(() => _preflighting = false);
+        var outcome = CertTrust.Outcome.Unreachable;
+        try { outcome = await CertTrust.PreflightAsync(Settings.ServerUrl).ConfigureAwait(false); }
+        catch { /* treated as unreachable; the check itself is silent unless it prompts */ }
+        _ui.Invoke(() =>
+        {
+            _preflighting = false;
+            NoteProbe(outcome);
+        });
     }
 
     private void ToggleStartup()

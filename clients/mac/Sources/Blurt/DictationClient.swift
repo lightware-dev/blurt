@@ -6,11 +6,35 @@ import Foundation
 /// main queue. Messages tagged with a stale dictation id (a previous
 /// dictation's late final, for example) are dropped.
 final class DictationClient: NSObject, URLSessionDelegate {
+    /// How long the server gets to say hello before we call it unreachable.
+    ///
+    /// The protocol has the server send `info` the instant the socket opens, so
+    /// a live blurtd answers in milliseconds. A dead one, though, does not
+    /// reliably *refuse*: a host asleep behind a VPN, a port forwarded to
+    /// nothing, a daemon still coming up — all of those swallow the connection
+    /// and then say nothing, and URLSession waits a full minute before
+    /// admitting it. That minute used to pass with the mic live and the HUD
+    /// reading "Listening…", so the dictation went into a socket that was never
+    /// going to answer. Generous enough for a slow link, short enough that
+    /// nobody gets through a sentence first.
+    private static let handshakeTimeout: TimeInterval = 3
+
     private var task: URLSessionWebSocketTask?
     private var closing = false
     private var dictationID = ""
     private lazy var session: URLSession =
         URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+
+    /// Whether anything has come back from the server on this connection. Until
+    /// it has, we have no evidence of a blurtd on the other end — TCP and TLS
+    /// both succeed against plenty of things that will never transcribe
+    /// anything. Main queue only.
+    private var serverSpoke = false
+    /// Fires once the handshake budget runs out with the server still silent.
+    private var watchdog: DispatchWorkItem?
+    /// A dying connection can fail several ways at once (the receive loop and
+    /// every queued send). The user needs to hear about it once.
+    private var reportedFailure = false
 
     var onPartial: ((String, String) -> Void)?   // (committed, live) — live may still be revised
     var onFinal: ((String) -> Void)?
@@ -18,6 +42,14 @@ final class DictationClient: NSObject, URLSessionDelegate {
     var onInfo: ((String, String) -> Void)?      // (state "ready|loading", model)
     var onStatus: ((String, String?) -> Void)?   // (state, detail)
     var onError: ((String) -> Void)?
+    /// The server's first message — the only proof that dictation can actually
+    /// happen. Fires once per connection, ahead of the message's own callback.
+    var onConnected: (() -> Void)?
+    /// The server never got as far as speaking: nothing is listening, the host
+    /// is unreachable, or it accepted the connection and went quiet. Kept apart
+    /// from `onError` because the cause is specific and the fix is actionable —
+    /// start blurtd — where a mid-dictation drop is neither.
+    var onUnreachable: ((String) -> Void)?
 
     /// Why the last handshake was refused, when it was refused over the server's
     /// certificate. A rejected TLS handshake surfaces to `onError` as an opaque
@@ -38,6 +70,8 @@ final class DictationClient: NSObject, URLSessionDelegate {
         }
         guard let url = comps.url else { onError?("Bad server URL"); return }
         closing = false
+        serverSpoke = false
+        reportedFailure = false
         dictationID = UUID().uuidString
         let t = session.webSocketTask(with: url)
         task = t
@@ -45,10 +79,14 @@ final class DictationClient: NSObject, URLSessionDelegate {
         sendJSON(["type": "start", "id": dictationID,
                   "audio": ["rate": 16000, "width": 2, "channels": 1]])
         receiveLoop()
+        armWatchdog()
     }
 
     func sendAudio(_ data: Data) {
-        task?.send(.data(data)) { _ in }
+        task?.send(.data(data)) { [weak self] error in
+            guard let error else { return }
+            DispatchQueue.main.async { self?.reportFailure(error.localizedDescription) }
+        }
     }
 
     /// Ask the server to finalize; it will reply with a {final} message.
@@ -56,6 +94,8 @@ final class DictationClient: NSObject, URLSessionDelegate {
 
     func close() {
         closing = true
+        watchdog?.cancel()
+        watchdog = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
     }
@@ -63,7 +103,33 @@ final class DictationClient: NSObject, URLSessionDelegate {
     private func sendJSON(_ obj: [String: Any]) {
         guard let d = try? JSONSerialization.data(withJSONObject: obj),
               let s = String(data: d, encoding: .utf8) else { return }
-        task?.send(.string(s)) { _ in }
+        task?.send(.string(s)) { [weak self] error in
+            guard let error else { return }
+            DispatchQueue.main.async { self?.reportFailure(error.localizedDescription) }
+        }
+    }
+
+    /// Give up on a server that took the connection and then said nothing.
+    /// Cancelled by its first message, and by `close()`. Main queue only.
+    private func armWatchdog() {
+        watchdog?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.serverSpoke else { return }
+            self.reportFailure("No reply within \(Int(Self.handshakeTimeout)) seconds.")
+        }
+        watchdog = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.handshakeTimeout, execute: work)
+    }
+
+    /// Report a dead connection once, tear the socket down, and route it by
+    /// whether the server ever spoke: silence from the start is an unreachable
+    /// server, a drop after it spoke is a lost connection. Main queue only.
+    private func reportFailure(_ message: String) {
+        guard !reportedFailure, !closing else { return }
+        reportedFailure = true
+        let spoke = serverSpoke
+        close()
+        if spoke { onError?(message) } else { onUnreachable?(message) }
     }
 
     private func receiveLoop() {
@@ -74,7 +140,7 @@ final class DictationClient: NSObject, URLSessionDelegate {
                 // A deliberate close() cancels the socket, which surfaces here as
                 // a "socket is not connected" failure. Don't report that as an error.
                 if self.closing { return }
-                DispatchQueue.main.async { self.onError?(err.localizedDescription) }
+                DispatchQueue.main.async { self.reportFailure(err.localizedDescription) }
             case .success(let message):
                 if case .string(let s) = message { self.handle(s) }
                 self.receiveLoop()
@@ -91,6 +157,15 @@ final class DictationClient: NSObject, URLSessionDelegate {
             // (e.g. Esc-cancel): delivering it would resurrect the HUD after
             // the "Cancelled" flash and leave it stuck on screen.
             guard !self.closing else { return }
+            // Anything at all from the server proves a blurtd is on the other
+            // end. Noted before the id filter below, since even a message we go
+            // on to drop is evidence the connection is alive.
+            if !self.serverSpoke {
+                self.serverSpoke = true
+                self.watchdog?.cancel()
+                self.watchdog = nil
+                self.onConnected?()
+            }
             // Drop messages from a dictation that isn't ours (a late final from
             // a previous session would otherwise get typed into the wrong
             // context). Checked here rather than on the delegate queue so that
