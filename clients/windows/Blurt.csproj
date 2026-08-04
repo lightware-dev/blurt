@@ -27,7 +27,7 @@
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <!-- Kept in lockstep with the release tag by windows.yml, mirroring the Mac
          Info.plist version guard. -->
-    <Version>0.2</Version>
+    <Version>0.3</Version>
     <Product>Blurt</Product>
     <Company>Lightware Consulting, Lda</Company>
   </PropertyGroup>
