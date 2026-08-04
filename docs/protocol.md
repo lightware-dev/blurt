@@ -137,10 +137,18 @@ and replies with `final`. Finals for dictations up to `FINAL_MAX_S` (default
 beyond that, the committed segments are stitched instead.
 
 `stop` always produces exactly one `final`. If the final decode exceeds
-`STOP_TIMEOUT_S` (default 60 s), the server returns the text already committed
-rather than leaving the client waiting — a slow decode degrades the transcript,
-it never silently discards it. A `stop` whose `id` doesn't match the running
-dictation is ignored; a `stop` with no `id` matches whatever is running.
+`STOP_TIMEOUT_S` (default 60 s, advertised in `info` as `stop_timeout_s`), the
+server returns the text already committed rather than leaving the client
+waiting — a slow decode degrades the transcript, it never silently discards it.
+A `stop` whose `id` doesn't match the running dictation is ignored; a `stop`
+with no `id` matches whatever is running.
+
+That guarantee is the server's, and a client shouldn't stake its UI on it: a
+process killed between the `stop` and the reply leaves a socket that is still
+open with nothing coming, which no amount of reading will reveal. Bound the
+wait at `stop_timeout_s` plus a margin and treat overshooting it as a failure.
+The partials already received are real transcription — only the full-context
+re-decode is missing — so keep them rather than discarding the dictation.
 
 #### `describe`
 
@@ -162,7 +170,8 @@ Asks for a fresh `info` (e.g. to poll whether the model finished loading).
   "version": "0.2",
   "model": "nvidia/parakeet-tdt-0.6b-v3",
   "state": "ready",
-  "audio": {"rate": 16000, "width": 2, "channels": 1}
+  "audio": {"rate": 16000, "width": 2, "channels": 1},
+  "stop_timeout_s": 60
 }
 ```
 
@@ -173,6 +182,21 @@ Asks for a fresh `info` (e.g. to poll whether the model finished loading).
   model…").
 - `audio` — the server's canonical format (what you get if you declare
   nothing).
+- `stop_timeout_s` — this server's `STOP_TIMEOUT_S`: the longest it will take to
+  answer a `stop`. Advertised so a client can bound its wait for a `final`
+  without guessing — assume the default and you cut off a server configured to
+  take longer; wait forever and a `final` that never comes hangs the UI. Blurt's
+  clients wait this plus 15 seconds, then give up and keep the partials.
+
+`info` is sent **unprompted, the moment the socket opens**, and that timing is
+load-bearing: it is the only thing that tells a client it reached a real blurtd
+rather than something that merely accepts TCP. Blurt's desktop clients hold the
+HUD on "Connecting…" until it lands and give up after 3 seconds without it —
+plenty of ways to fail (a host asleep behind a VPN, a port forwarded to nothing,
+a daemon still starting) complete the handshake and then say nothing, and a
+client that assumes otherwise streams a whole dictation into a socket that will
+never answer. Send it before anything else, including while the model is still
+loading.
 
 #### `status`
 

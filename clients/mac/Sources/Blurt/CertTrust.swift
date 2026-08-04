@@ -254,6 +254,15 @@ enum CertTrust {
         }
     }
 
+    /// Whether `preflight` will actually open a connection for this URL. False
+    /// for `ws://`, which has no certificate to inspect and so reports `.ok`
+    /// without touching the network — an answer about trust, not about whether
+    /// anything is listening. Callers reading reachability out of an `Outcome`
+    /// have to check this first.
+    static func probesReachability(_ urlString: String) -> Bool {
+        probeURL(urlString) != nil
+    }
+
     /// The server serves its browser mic-test page over HTTPS on the same port
     /// it serves `wss://` on, so a plain GET at the origin root reaches the same
     /// listener with the same certificate. The response is irrelevant — the
