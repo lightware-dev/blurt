@@ -125,7 +125,8 @@ audio duration, segments — never transcript text; set `LOG_STATS=0` to silence
 ### Docker
 
 Every release publishes a prebuilt GPU image to the GitHub Container Registry,
-so running the server needs neither a checkout nor a 20-minute local build:
+so running the server needs neither a checkout nor a local build of the CUDA +
+NeMo dependency tree (several GB of wheels):
 
 ```bash
 docker run --gpus all -p 25878:25878 -v blurtd-cache:/home/blurt/.cache \
