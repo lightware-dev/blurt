@@ -39,8 +39,8 @@ NVIDIA GPU box, and a **client** on the Mac or Windows machine you dictate from.
 (TLS and model download are automatic — see [**Docker**](#docker)):
 
 ```bash
-docker build -t blurtd .
-docker run --gpus all -p 25878:25878 -v blurtd-cache:/home/blurt/.cache blurtd
+docker run --gpus all -p 25878:25878 -v blurtd-cache:/home/blurt/.cache \
+    ghcr.io/lightware-dev/blurt:latest
 ```
 
 or from source:
@@ -124,19 +124,47 @@ audio duration, segments — never transcript text; set `LOG_STATS=0` to silence
 
 ### Docker
 
-A `Dockerfile` (and `docker-compose.yml`) ship the daemon as a GPU container.
-The image installs `torch==2.12.1+cu130` from the PyTorch index — the cu130
-wheels bundle the CUDA + cuDNN runtime, so there's no CUDA base image; the
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
-injects your host driver at run time (`--gpus all`).
+Every release publishes a prebuilt GPU image to the GitHub Container Registry,
+so running the server needs neither a checkout nor a local build of the CUDA +
+NeMo dependency tree (several GB of wheels):
+
+```bash
+docker run --gpus all -p 25878:25878 -v blurtd-cache:/home/blurt/.cache \
+    ghcr.io/lightware-dev/blurt:latest
+#   append daemon flags after the image:  docker run … ghcr.io/…/blurt:latest --port 8000
+```
+
+| Tag | What it is |
+| --- | --- |
+| `:0.3` | a specific release — pin this if you want upgrades to be a decision |
+| `:latest` | the newest release |
+| `:edge` | whatever `main` builds right now; no promises |
+
+The image is `linux/amd64` only, on purpose: it exists to run CUDA on an NVIDIA
+box, and the `torch` cu130 wheels it installs are x86_64 Linux.
+
+Each published image carries a signed provenance attestation binding it to the
+commit and workflow run that built it — the same guarantee the macOS and Windows
+downloads get. Verify one straight from the registry:
+
+```bash
+gh attestation verify oci://ghcr.io/lightware-dev/blurt:latest --repo lightware-dev/blurt
+```
+
+Or build it yourself from a checkout — a `Dockerfile` and `docker-compose.yml`
+ship in the repo:
 
 ```bash
 docker build -t blurtd .
 docker run --gpus all -p 25878:25878 -v blurtd-cache:/home/blurt/.cache blurtd
-#   append flags like a bare invocation:  docker run … blurtd --port 8000
 # or:
 docker compose up --build
 ```
+
+Either way the image installs `torch==2.12.1+cu130` from the PyTorch index — the
+cu130 wheels bundle the CUDA + cuDNN runtime, so there's no CUDA base image; the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+injects your host driver at run time (`--gpus all`).
 
 Models are pulled from HuggingFace on first run into `/home/blurt/.cache` — the
 `blurtd-cache` volume above persists them so you don't re-download on restart.

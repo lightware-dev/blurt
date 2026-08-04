@@ -1,0 +1,186 @@
+name: Publish server image
+
+# Builds the blurtd GPU image and pushes it to the GitHub Container Registry, so
+# running the server doesn't require a checkout and a 20-minute local build:
+#
+#   docker run --gpus all -p 25878:25878 -v blurtd-cache:/home/blurt/.cache \
+#       ghcr.io/lightware-dev/blurt:latest
+#
+# Tag policy:
+#   v0.3 (release tag)  ->  :0.3  and  :latest
+#   push to main        ->  :edge          (moving — what main builds right now)
+#   pull request        ->  built, never pushed
+#
+# linux/amd64 only, deliberately: the image exists to run CUDA on an NVIDIA box,
+# and the torch cu130 wheels it installs are x86_64 Linux. An arm64 variant would
+# be a QEMU-emulated build of wheels that don't exist for that platform.
+on:
+    push:
+        branches:
+            - main
+        tags:
+            - 'v*'
+        paths:
+            - 'Dockerfile'
+            - 'docker-entrypoint.sh'
+            - '.dockerignore'
+            - 'requirements.txt'
+            - 'server/**'
+            - 'static/**'
+            - 'blurtd'
+            - '.github/workflows/docker.yml'
+    pull_request:
+        # Narrower than the push filter on purpose. The build only *copies*
+        # server/ and static/ — it never runs them — so a change there cannot
+        # break the image, and server.yml already compiles and tests that code.
+        # What can break the build is the recipe itself, so a PR only pays for a
+        # rebuild when it touches one of these.
+        paths:
+            - 'Dockerfile'
+            - 'docker-entrypoint.sh'
+            - '.dockerignore'
+            - 'requirements.txt'
+            - '.github/workflows/docker.yml'
+    workflow_dispatch:
+
+# NOTE: path filters are ignored for tag pushes, so `v*` tags always run —
+# exactly what we want for cutting a release.
+
+# A newer commit supersedes an in-flight run on the same branch/PR. Tag refs are
+# unique, so a release build is never cancelled by this.
+concurrency:
+    group: docker-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        name: Build & push blurtd image
+        # A cold build (nothing cached, both pip installs from scratch) measured
+        # ~3 minutes on a hosted runner — the wheels download fast there. This
+        # ceiling only trips on a hang.
+        timeout-minutes: 30
+        permissions:
+            contents: read
+            packages: write # push the image to GHCR
+            id-token: write # OIDC token the attestation is signed against
+            attestations: write # write the SLSA provenance statement
+        env:
+            # GHCR rejects an uppercase path component; `lightware-dev/blurt` is
+            # already lowercase, so github.repository can be used as-is. Rename
+            # the repo to anything with a capital in it and this needs a
+            # tr '[:upper:]' '[:lower:]' first.
+            IMAGE: ghcr.io/${{ github.repository }}
+        steps:
+            - name: checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            # No disk-freeing step here on purpose. This image is large (torch
+            # plus its bundled CUDA/cuDNN runtime, NeMo, and the ASR tree), which
+            # makes the usual "delete the Android SDK and dotnet" preamble look
+            # necessary — it isn't. A hosted ubuntu-24 runner reports 145 GB with
+            # ~88 GB free before anything is removed, and a measured cold build of
+            # this Dockerfile finishes with room to spare. The preamble cost ~90 s
+            # of every run to free space nothing was short of.
+            - name: set up buildx
+              uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+            # Skipped on pull requests: nothing is pushed there, and a PR from a
+            # fork gets a read-only GITHUB_TOKEN that cannot log in anyway.
+            - name: log in to GHCR
+              if: github.event_name != 'pull_request'
+              uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: image tags and labels
+              id: meta
+              uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+              with:
+                  images: ${{ env.IMAGE }}
+                  # `type=semver` would be wrong here: releases are tagged `v0.3`,
+                  # and a two-component version is not valid semver, so semver
+                  # parsing drops it and the release would publish no version tag
+                  # at all — silently, with the workflow still green. `type=match`
+                  # runs a plain regex over the tag name instead:
+                  #   v0.3    -> 0.3         (+ latest)
+                  #   v0.3.1  -> 0.3.1, 0.3  (+ latest)
+                  # The three-component pattern simply doesn't match a `v0.3` tag,
+                  # and duplicate tags across the two lines are de-duplicated.
+                  tags: |
+                      type=match,pattern=v(\d+\.\d+\.\d+),group=1
+                      type=match,pattern=v(\d+\.\d+),group=1
+                      type=raw,value=edge,enable={{is_default_branch}}
+                      type=ref,event=pr
+                  # latest=auto applies :latest on tag pushes only — never on main,
+                  # which gets :edge instead.
+                  flavor: latest=auto
+                  labels: |
+                      org.opencontainers.image.title=blurtd
+                      org.opencontainers.image.description=Blurt — local-only Parakeet streaming ASR server for dictation (NVIDIA GPU)
+                      org.opencontainers.image.licenses=Apache-2.0
+                      org.opencontainers.image.documentation=https://github.com/lightware-dev/blurt#docker
+
+            - name: build and push
+              id: build
+              uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+              with:
+                  context: .
+                  platforms: linux/amd64
+                  push: ${{ github.event_name != 'pull_request' }}
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+                  annotations: ${{ steps.meta.outputs.annotations }}
+                  # Reuse the previous main build's layers. The expensive part is
+                  # the two pip installs, which only change when requirements.txt
+                  # or the python:3.12-slim-bookworm base does — so a server/-only
+                  # push rebuilds the last few COPY layers in a couple of minutes
+                  # instead of twenty. `type=inline` writes the cache manifest into
+                  # the image's own config, so it costs no extra registry storage,
+                  # and a cache *import* miss (the very first build, or while the
+                  # package is still private) is a warning rather than a failure.
+                  cache-from: type=registry,ref=${{ env.IMAGE }}:edge
+                  cache-to: type=inline
+                  # BuildKit's own provenance/SBOM attestations turn a
+                  # single-platform push into a manifest *list* carrying an
+                  # `unknown/unknown` entry, which is what makes GHCR's package
+                  # page and `docker manifest inspect` show a phantom platform. We
+                  # publish provenance separately below instead, in the same signed
+                  # form the macOS and Windows release artifacts already use.
+                  provenance: false
+                  sbom: false
+
+            # Binds the image digest to the repo, workflow and commit that produced
+            # it — the container-registry counterpart of the attestation mac.yml
+            # and windows.yml attach to their zips. Consumers verify with:
+            #   gh attestation verify oci://ghcr.io/lightware-dev/blurt:0.3 \
+            #       --repo lightware-dev/blurt
+            #
+            # push-to-registry stores the statement alongside the image in GHCR, so
+            # verification needs the registry rather than a GitHub Release asset.
+            - name: attest build provenance
+              if: github.event_name != 'pull_request'
+              uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+              with:
+                  subject-name: ${{ env.IMAGE }}
+                  subject-digest: ${{ steps.build.outputs.digest }}
+                  push-to-registry: true
+
+            - name: summary
+              if: github.event_name != 'pull_request'
+              env:
+                  TAGS: ${{ steps.meta.outputs.tags }}
+                  DIGEST: ${{ steps.build.outputs.digest }}
+              run: |
+                  set -euo pipefail
+                  {
+                      echo "### Published"
+                      echo
+                      echo '```'
+                      printf '%s\n' "$TAGS"
+                      echo '```'
+                      echo
+                      echo "Digest: \`$DIGEST\`"
+                  } >> "$GITHUB_STEP_SUMMARY"

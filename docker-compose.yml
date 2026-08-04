@@ -5,6 +5,13 @@
 # Needs the NVIDIA Container Toolkit on the host (`--gpus all` equivalent).
 services:
   blurtd:
+    # Builds from this checkout. To run the published image instead, drop the
+    # `build:` line and point `image:` at the registry:
+    #
+    #   image: ghcr.io/lightware-dev/blurt:latest
+    #
+    # Keep `build:` and Compose builds when the image is absent locally, which
+    # would quietly rebuild rather than pull — so it's one or the other.
     build: .
     image: blurtd
     container_name: blurtd
