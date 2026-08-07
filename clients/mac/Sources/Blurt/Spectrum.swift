@@ -89,6 +89,19 @@ final class Spectrum {
         return analyze()
     }
 
+    /// Float32 sibling, for engines that ask for float PCM (SpeechAnalyzer does).
+    /// Already in -1…1, so unlike the Int16 path there is nothing to normalize.
+    func ingest(_ samples: UnsafePointer<Float>, count: Int) -> [Float] {
+        if count >= fftSize {
+            for i in 0..<fftSize { ring[i] = samples[count - fftSize + i] }
+        } else {
+            let keep = fftSize - count
+            for i in 0..<keep { ring[i] = ring[i + count] }
+            for i in 0..<count { ring[keep + i] = samples[i] }
+        }
+        return analyze()
+    }
+
     private func analyze() -> [Float] {
         let half = fftSize / 2
         var windowed = [Float](repeating: 0, count: fftSize)

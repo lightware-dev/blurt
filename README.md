@@ -15,15 +15,23 @@ Three parts:
   (~2.3 GB, bf16), low WER, near-realtime live partials over a WebSocket.
 - **`clients/mac/`** — a native **macOS menu-bar app** (Swift, universal
   arm64 + x86_64). A global hotkey toggles dictation; live text shows in a HUD;
-  the final transcript is typed into whatever field has focus.
+  the final transcript is typed into whatever field has focus. It can transcribe
+  against the server, or — on Apple silicon running macOS 26+ — entirely
+  on-device with no server at all
+  ([details](clients/mac/README.md#transcription-engine)).
 - **`clients/windows/`** — a native **Windows tray app** (.NET 8 / WPF). The
   twin of the Mac client: same hotkey-to-dictate flow, same server protocol, a
   live HUD with audio waveform, and text injected into the focused field.
 
 ```
- mic ─▶ AVAudioEngine (16 kHz PCM16) ─▶ WebSocket ─▶ Parakeet server (NVIDIA GPU)
-                                                        │  Silero VAD → segment
- double-tap ⌥ toggles ◀── HUD partials / final text ◀──┘  re-decode every ~350ms
+ mic ─▶ AVAudioEngine ─┬─▶ WebSocket ─▶ Parakeet server (NVIDIA GPU)
+                       │                   │  Silero VAD → segment
+                       │                   │  re-decode every ~350ms
+                       │                   │
+                       └─▶ SpeechAnalyzer ─┤  on-device, macOS 26 + Apple silicon
+                           (Mac client)    │  (optional — no server needed)
+                                           │
+ double-tap ⌥ toggles ◀── HUD partials / final text
         │
         └▶ inject final text into the focused field (paste, or type)
 ```
@@ -34,6 +42,11 @@ Blurt runs across **two machines on the same LAN**: the **server** on your
 NVIDIA GPU box, and a **client** on the Mac or Windows machine you dictate from.
 (They can be the same machine if it has the GPU — the client just points at
 `localhost`.)
+
+> **On an Apple silicon Mac running macOS 26 or later** you can skip the server
+> entirely: install the Mac client, pick **This Mac** under
+> **Settings ▸ Transcription**, and dictate. Steps 1 and 3 below are then only
+> relevant if you want the (faster, more accurate) Parakeet server as well.
 
 **1 — Start the server** on the GPU box (Linux + NVIDIA GPU). With Docker
 (TLS and model download are automatic — see [**Docker**](#docker)):

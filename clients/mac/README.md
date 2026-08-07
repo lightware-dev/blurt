@@ -1,7 +1,9 @@
 # Blurt — macOS menu-bar client
 
-Native Swift menu-bar app that streams your mic to the Parakeet server and types
-the transcript into the focused field. No Dock icon; lives in the menu bar.
+Native Swift menu-bar app that turns what you say into text in the focused
+field. No Dock icon; lives in the menu bar. It transcribes either by streaming
+your mic to the Parakeet server, or entirely on this Mac — see
+[Transcription engine](#transcription-engine).
 
 ## Install
 
@@ -15,12 +17,45 @@ brew install --cask lightware-dev/tap/blurt
 automatically when a `v*` tag is published — see [CI & releases](#ci--releases)).
 Or grab the zip directly from the [latest release](https://github.com/lightware-dev/blurt/releases/latest).
 
-You still need a running Parakeet server to point it at — see the repo root README.
+On an Apple silicon Mac running macOS 26 or later you can dictate straight away,
+with no server at all. Otherwise you need a running Parakeet server to point it
+at — see the repo root README.
+
+## Transcription engine
+
+**Settings ▸ Transcription** picks who does the work. Either way the audio stays
+on hardware you own; nothing is ever sent to us or to a cloud API.
+
+| | **Blurt server** (default) | **This Mac** |
+|---|---|---|
+| Model | Parakeet TDT 0.6B v3 | Apple's on-device speech model |
+| Runs on | your NVIDIA GPU box, over the LAN | this Mac's Neural Engine |
+| Needs | a running `blurtd` | macOS 26+ **and** Apple silicon |
+| Ships | nothing | nothing — macOS supplies the model |
+| Languages | whatever the server model covers | the locales macOS has models for |
+
+Local mode carries no model of its own: macOS owns it, and the first dictation
+in a language the Mac hasn't downloaded yet shows **Loading model…** while it
+fetches. After that it is resident and starts instantly.
+
+**Why Apple silicon only.** The `SpeechTranscriber` API reports itself
+unavailable without a Neural Engine, which is to say on every Intel Mac — even
+on macOS 26, which is the last release Intel Macs can run at all. The app is
+still a universal binary and Intel Macs are fully supported; they use server
+mode, and Settings shows the local option greyed out with the reason. There is
+no separate Intel build and no separate download.
 
 ## Build (on the Mac)
 
-Requires the Xcode command-line tools (`xcode-select --install`). No third-party
-dependencies — pure AppKit / AVFoundation / Carbon.
+Requires the Xcode command-line tools (`xcode-select --install`), with the
+**macOS 26 SDK** — the on-device engine won't compile without it. No third-party
+dependencies — pure AppKit / AVFoundation / Speech / Carbon.
+
+The deployment target stays macOS 13, and the Speech symbols sit behind
+`#available(macOS 26, *)`, so one universal binary still runs everywhere from
+Ventura up. They ship in the x86_64 slice of the SDK too, so no conditional
+compilation is involved — Intel just gets `false` from
+`SpeechTranscriber.isAvailable` at runtime.
 
 ```bash
 ./build-app.sh          # builds a universal (arm64 + x86_64) Blurt.app
@@ -113,9 +148,10 @@ the `.p8`).
 2. **Accessibility** — required to insert text into other apps. The app triggers
    the prompt; open **System Settings ▸ Privacy & Security ▸ Accessibility** and
    enable **Blurt** (toggle off/on if you rebuild).
-3. Click the menu-bar **mic** icon ▸ **Set Server URL…** →
-   `wss://<your-linux-ip>:25878/ws` (and **Set Auth Token…** if the server has
-   `AUTH_TOKEN` set).
+3. **Pick an engine** in **Settings… ▸ Transcription**. For server mode, set the
+   WebSocket URL to `wss://<your-linux-ip>:25878/ws` (and the auth token if the
+   server has `AUTH_TOKEN` set). For local mode there is nothing to configure.
+4. **Speech recognition** — local mode only; macOS prompts the first time.
 
 ## Use
 
