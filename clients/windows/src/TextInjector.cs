@@ -24,7 +24,8 @@ internal static class TextInjector
     }
 
     // Fast path: stash the clipboard, replace it with our text, Ctrl+V, then
-    // restore the previous contents a moment later (mirrors the Mac 0.25 s delay).
+    // restore the previous contents once the target app has had time to paste
+    // (mirrors the Mac client's delay).
     private static void Paste(string text)
     {
         var dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
@@ -35,15 +36,28 @@ internal static class TextInjector
 
         PressCtrlV();
 
-        dispatcher.BeginInvoke(() =>
+        // SendInput only queues the keystroke — the focused app reads the
+        // clipboard whenever it gets around to the Ctrl+V. Restoring on the
+        // next idle dispatcher tick loses that race and the old clipboard gets
+        // pasted instead of the transcript, so wait a real second. And leave
+        // the clipboard alone if anything else has written it since — ours is
+        // no longer the value to undo.
+        var timer = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
         {
+            Interval = TimeSpan.FromSeconds(1),
+        };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
             try
             {
+                if (!Clipboard.ContainsText() || Clipboard.GetText() != text) return;
                 if (previous is not null) Clipboard.SetText(previous);
                 else Clipboard.Clear();
             }
             catch { }
-        }, DispatcherPriority.Background);
+        };
+        timer.Start();
     }
 
     private static void PressCtrlV()

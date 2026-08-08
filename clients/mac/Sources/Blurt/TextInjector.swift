@@ -15,14 +15,21 @@ enum TextInjector {
     }
 
     /// Fast path: put text on the clipboard, synthesize ⌘V, then restore the
-    /// previous clipboard string a moment later.
+    /// previous clipboard string once the target app has had time to paste.
     private static func paste(_ text: String) {
         let pb = NSPasteboard.general
         let previous = pb.string(forType: .string)
         pb.clearContents()
         pb.setString(text, forType: .string)
+        let ourChange = pb.changeCount
         pressCmdV()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+        // Slow apps (Electron, browsers under load) can take well over 250 ms
+        // to service the synthesized ⌘V; restoring before they read the
+        // pasteboard makes them paste the *old* clipboard instead of the
+        // transcript. Skip the restore entirely if anything else has written
+        // the pasteboard since — ours is no longer the value to undo.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            guard pb.changeCount == ourChange else { return }
             pb.clearContents()
             if let previous = previous { pb.setString(previous, forType: .string) }
         }
