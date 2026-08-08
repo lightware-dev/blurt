@@ -13,9 +13,9 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleVersion</key>
-    <string>3</string>
+    <string>4</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.3</string>
+    <string>0.4</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>
@@ -24,7 +24,9 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Blurt streams your microphone to your local Parakeet server for transcription.</string>
+    <string>Blurt turns what you say into text — on this Mac, or on your own Parakeet server.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Blurt uses macOS on-device speech recognition to transcribe your dictation. Audio stays on this Mac.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

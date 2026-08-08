@@ -185,6 +185,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
     /// Fired when the server URL actually changes, so the app can settle trust in
     /// the new server's certificate before the next dictation needs it.
     var onServerChanged: (() -> Void)?
+    /// Fired when the user picks a different transcription engine, so the app
+    /// can build the one they asked for.
+    var onEngineChanged: (() -> Void)?
 
     private let colW: CGFloat = 300       // width of one card column
     private let colGap: CGFloat = 16      // gap between the two columns
@@ -193,6 +196,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
 
     private var radios: [Settings.ShortcutMode: NSButton] = [:]
     private var injectRadios: [String: NSButton] = [:]
+    private var engineRadios: [Settings.Engine: NSButton] = [:]
+    /// The server URL/token controls, dimmed as a group when the local engine
+    /// is selected — they still say where blurtd is, but nothing is going there.
+    private var serverFieldViews: [NSView] = []
     private let field = ShortcutCaptureField()
     private let serverField = NSTextField()
     private let tokenField = NSTextField()
@@ -269,17 +276,42 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
             body: "How you summon Blurt from anywhere.",
             rows: shortcutRows)
 
-        // ── card 02: server ───────────────────────────────────
+        // ── card 02: transcription ────────────────────────────
+        let engineOptions: [(String, Settings.Engine)] = [
+            ("Blurt server  (Parakeet, on your GPU box)", .server),
+            ("This Mac  (Apple Speech, on-device)", .local),
+        ]
+        var engineRows: [NSView] = []
+        for (name, mode) in engineOptions {
+            let radio = NSButton(radioButtonWithTitle: "", target: self, action: #selector(pickEngine(_:)))
+            radio.attributedTitle = NSAttributedString(string: name, attributes: [
+                .font: Brand.display(14, .regular),
+                .foregroundColor: Brand.bone,
+            ])
+            engineRadios[mode] = radio
+            engineRows.append(radio)
+        }
+        // Shown rather than hidden on a Mac that can't transcribe locally: a
+        // greyed-out option that says why is discoverable, a missing one isn't.
+        if let reason = LocalTranscription.unavailableReason {
+            engineRadios[.local]?.isEnabled = false
+            let note = NSStackView(views: [spacer(20),
+                                           label(reason, Brand.mono(11), Brand.boneDim)])
+            note.orientation = .horizontal
+            engineRows.append(note)
+        }
+
         let urlLabel = label("WebSocket URL", Brand.display(13, .regular), Brand.bone)
         let tokenLabel = label("Auth token  (blank = none)", Brand.display(13, .regular), Brand.bone)
         let urlBox = boxed(serverField, placeholder: "wss://192.168.1.50:25878/ws",
                            value: Settings.serverURL)
         let tokenBox = boxed(tokenField, placeholder: "", value: Settings.authToken)
+        serverFieldViews = [urlLabel, urlBox, tokenLabel, tokenBox]
         let serverCard = makeCard(
             index: "02",
-            title: "Server",
-            body: "Your own transcription box — audio streams here and nowhere else.",
-            rows: [urlLabel, urlBox, tokenLabel, tokenBox],
+            title: "Transcription",
+            body: "Where your voice becomes text. Either way it stays on hardware you own.",
+            rows: engineRows + serverFieldViews,
             tightAfter: [urlLabel, tokenLabel])
 
         // ── card 03: insertion ────────────────────────────────
@@ -454,6 +486,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
         field.isActive = mode == .custom
         field.refresh()
         for (m, radio) in injectRadios { radio.state = m == Settings.injectMode ? .on : .off }
+
+        let usingServer = Settings.engine == .server
+        for (m, radio) in engineRadios { radio.state = m == Settings.engine ? .on : .off }
+        for v in serverFieldViews { v.alphaValue = usingServer ? 1 : 0.35 }
+        // Dimmed *and* inert: a field you can still type into but that nothing
+        // reads is worse than one that plainly isn't in play.
+        serverField.isEnabled = usingServer
+        tokenField.isEnabled = usingServer
     }
 
     // MARK: actions
@@ -465,6 +505,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate, NSTe
         onChange?()
         // Picking "Custom" starts recording right away.
         if mode == .custom { window?.makeFirstResponder(field) }
+    }
+
+    @objc private func pickEngine(_ sender: NSButton) {
+        guard let mode = engineRadios.first(where: { $0.value == sender })?.key else { return }
+        Settings.engine = mode
+        sync()
+        onEngineChanged?()
     }
 
     @objc private func pickInsert(_ sender: NSButton) {

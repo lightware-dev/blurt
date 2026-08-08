@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 /// WebSocket client to the Parakeet server (see docs/protocol.md). Sends
@@ -5,7 +6,7 @@ import Foundation
 /// PCM16, sends {stop}; surfaces info/vad/partial/final/status back on the
 /// main queue. Messages tagged with a stale dictation id (a previous
 /// dictation's late final, for example) are dropped.
-final class DictationClient: NSObject, URLSessionDelegate {
+final class DictationClient: NSObject, URLSessionDelegate, TranscriptionEngine {
     /// How long the server gets to say hello before we call it unreachable.
     ///
     /// The protocol has the server send `info` the instant the socket opens, so
@@ -102,7 +103,14 @@ final class DictationClient: NSObject, URLSessionDelegate {
         armWatchdog()
     }
 
-    func sendAudio(_ data: Data) {
+    /// The wire format the server declares in `start` — the same one
+    /// AudioCapture is told to produce, so this is a straight reinterpret of the
+    /// buffer's bytes rather than a conversion.
+    var inputFormat: AVAudioFormat { AudioCapture.serverFormat }
+
+    func sendAudio(_ buffer: AVAudioPCMBuffer) {
+        guard let ch = buffer.int16ChannelData, buffer.frameLength > 0 else { return }
+        let data = Data(bytes: ch[0], count: Int(buffer.frameLength) * MemoryLayout<Int16>.size)
         task?.send(.data(data)) { [weak self] error in
             guard let error else { return }
             DispatchQueue.main.async { self?.reportFailure(error.localizedDescription) }
