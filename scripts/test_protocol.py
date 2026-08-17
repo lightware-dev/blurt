@@ -892,7 +892,8 @@ async def suite_precision(_app):
     import server.asr as asr
 
     saved = {k: os.environ.get(k) for k in
-             ("PARAKEET_DTYPE", "PARAKEET_BF16_CKPT", "PARAKEET_FP16_CKPT")}
+             ("PARAKEET_DTYPE", "PARAKEET_BF16_CKPT", "PARAKEET_FP16_CKPT",
+              "PARAKEET_NVFP4_SNAPSHOT", "PARAKEET_REPO")}
     try:
         for k in saved:
             os.environ.pop(k, None)
@@ -902,25 +903,50 @@ async def suite_precision(_app):
         check("aliases resolve", [asr.resolve_precision(x) for x in
                                   ("fp16", "float16", "half", "BF16", None)]
               == ["fp16", "fp16", "fp16", "bf16", "bf16"])
+        check("nvfp4 aliases resolve", [asr.resolve_precision(x) for x in
+                                        ("nvfp4", "fp4", "int4", "4bit", "NVFP4")]
+              == ["nvfp4"] * 5)
         bad = False
         try:
-            asr.resolve_precision("int8")
+            asr.resolve_precision("int3")
         except ValueError:
             bad = True
         check("unknown dtype rejected", bad)
 
         bf16, fp16 = asr.ParakeetASR("bf16"), asr.ParakeetASR("fp16")
-        check("precisions use distinct checkpoints", bf16.ckpt_path() != fp16.ckpt_path())
+        nvfp4 = asr.ParakeetASR("nvfp4")
+        check("precisions use distinct checkpoints",
+              len({bf16.ckpt_path(), fp16.ckpt_path(), nvfp4.ckpt_path()}) == 3)
         check("bf16 default path unchanged",
               bf16.ckpt_path().endswith("parakeet-tdt-0.6b-v3-bf16.nemo"))
         check("fp16 default path is the fp16 file",
               fp16.ckpt_path().endswith("parakeet-tdt-0.6b-v3-fp16.nemo"))
+        # A directory, not a .nemo — the snapshot is several files.
+        check("nvfp4 default path is the snapshot directory",
+              nvfp4.ckpt_path().endswith("parakeet-tdt-0.6b-v3-nvfp4"))
+        check("only nvfp4 loads from a snapshot",
+              [asr.PRECISIONS[p]["kind"] for p in ("bf16", "fp16", "nvfp4")]
+              == ["nemo", "nemo", "snapshot"])
+        # nvfp4 is W4A16: four-bit weights, but everything computed stays bf16, so
+        # it must not report itself as some exotic activation dtype.
+        if importlib.util.find_spec("torch") is not None:
+            import torch  # noqa: PLC0415  (guarded by the find_spec above)
+
+            check("nvfp4 runs bf16 activations",
+                  nvfp4.torch_dtype() is torch.bfloat16
+                  and asr.ParakeetASR("fp16").torch_dtype() is torch.float16)
 
         os.environ["PARAKEET_FP16_CKPT"] = "/tmp/custom-fp16.nemo"
         check("PARAKEET_FP16_CKPT overrides only fp16",
               asr.ParakeetASR("fp16").ckpt_path() == "/tmp/custom-fp16.nemo"
               and asr.ParakeetASR("bf16").ckpt_path() != "/tmp/custom-fp16.nemo")
         os.environ.pop("PARAKEET_FP16_CKPT")
+
+        os.environ["PARAKEET_NVFP4_SNAPSHOT"] = "/tmp/custom-nvfp4"
+        check("PARAKEET_NVFP4_SNAPSHOT overrides only nvfp4",
+              asr.ParakeetASR("nvfp4").ckpt_path() == "/tmp/custom-nvfp4"
+              and asr.ParakeetASR("bf16").ckpt_path() != "/tmp/custom-nvfp4")
+        os.environ.pop("PARAKEET_NVFP4_SNAPSHOT")
 
         os.environ["PARAKEET_DTYPE"] = "fp16"
         check("PARAKEET_DTYPE switches the engine", asr.ParakeetASR().precision == "fp16")
@@ -936,6 +962,11 @@ async def suite_precision(_app):
         else:
             import torch  # noqa: PLC0415  (guarded by the find_spec above)
 
+            # The repo has to be a nonexistent name, or this check is vacuous: with
+            # a working network the loader simply *downloads* the checkpoint it was
+            # told is missing, loads it, and raises nothing. It only looked green
+            # because CI has no torch and skips the whole block.
+            os.environ["PARAKEET_REPO"] = "lightware-dev/no-such-repo-for-tests"
             os.environ["PARAKEET_FP16_CKPT"] = "/nonexistent/nope.nemo"
             asr = importlib.reload(asr)
             err = ""
@@ -946,6 +977,21 @@ async def suite_precision(_app):
             want = ("build_bf16_ckpt.py --dtype fp16" if torch.cuda.is_available()
                     else "no CUDA device was found")
             check("missing fp16 checkpoint fails with the actionable message",
+                  want in err, detail=err[:160])
+
+            # Same for nvfp4, which must name its own builder rather than
+            # build_bf16_ckpt.py — that script cannot produce a snapshot.
+            os.environ.pop("PARAKEET_FP16_CKPT", None)
+            os.environ["PARAKEET_NVFP4_SNAPSHOT"] = "/nonexistent/snapshot-dir"
+            asr = importlib.reload(asr)
+            err = ""
+            try:
+                asr.ParakeetASR("nvfp4").load()
+            except Exception as e:
+                err = str(e)
+            want = ("build_nvfp4_snapshot.py" if torch.cuda.is_available()
+                    else "no bf16-capable CUDA device was found")
+            check("missing nvfp4 snapshot fails with the actionable message",
                   want in err, detail=err[:160])
     finally:
         for k, v in saved.items():

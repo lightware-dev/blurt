@@ -27,6 +27,10 @@ python-multipart>=0.0.9   # multipart forms for the OpenAI-compatible /v1 API
 uvicorn>=0.30.0
 websockets>=13.0
 nemo_toolkit[asr]>=2.0.0
+# 4-bit weights (PARAKEET_DTYPE=nvfp4). Only imported when that precision is
+# selected, but it ships in the image so the option works out of the box; it is
+# ~15 MB and its dependencies are already pulled in by NeMo.
+nvidia-modelopt>=0.45.0
 silero-vad>=5.1
 soundfile>=0.12.0
 librosa>=0.10.0

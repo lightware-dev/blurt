@@ -19,6 +19,12 @@ checkpoint instead, for pre-Ampere GPUs (GTX 16xx / RTX 20xx, sm_75) that have
 no bf16 support at all. fp16 has the same 16 bits but spends them differently:
 10 mantissa bits to bf16's 7 (finer), against a 65504 ceiling to bf16's ~3e38
 (narrower). scripts/compare_precision.py measures both on real audio.
+
+`PARAKEET_DTYPE=nvfp4` is the third option, for cards short of VRAM: 4-bit
+encoder weights, halving memory (0.78 GB peak against 1.43) at no measurable
+accuracy cost but ~2.4x the decode latency. It loads a pre-quantized snapshot
+rather than a .nemo, because 4-bit scales come from calibration on real audio
+and not from a cast — see server/nvfp4.py.
 """
 
 from __future__ import annotations
@@ -53,15 +59,27 @@ MODEL_REPO = os.getenv("PARAKEET_REPO") or "lightware-dev/parakeet-tdt-0.6b-v3"
 BF16_FILE = "parakeet-tdt-0.6b-v3-bf16.nemo"
 
 # Per-precision knobs. bf16 is the default; fp16 exists for sm_75 cards
-# (GTX 16xx / RTX 20xx) that cannot do bf16 at all.
+# (GTX 16xx / RTX 20xx) that cannot do bf16 at all; nvfp4 trades speed for VRAM.
+#
+# `kind` says what is on disk. The half-precision options are a single .nemo that
+# NeMo restores directly. nvfp4 is a directory of pre-quantized weights (see
+# server/nvfp4.py) because quantizing at load time would defeat the point: the
+# GPU would have to hold the bf16 model first.
 PRECISIONS = {
     "bf16": {
+        "kind": "nemo",
         "file": BF16_FILE,
         "ckpt_env": "PARAKEET_BF16_CKPT",
     },
     "fp16": {
+        "kind": "nemo",
         "file": "parakeet-tdt-0.6b-v3-fp16.nemo",
         "ckpt_env": "PARAKEET_FP16_CKPT",
+    },
+    "nvfp4": {
+        "kind": "snapshot",
+        "file": "parakeet-tdt-0.6b-v3-nvfp4",
+        "ckpt_env": "PARAKEET_NVFP4_SNAPSHOT",
     },
 }
 DEFAULT_PRECISION = "bf16"
@@ -70,6 +88,7 @@ DEFAULT_PRECISION = "bf16"
 _PRECISION_ALIASES = {
     "bf16": "bf16", "bfloat16": "bf16",
     "fp16": "fp16", "float16": "fp16", "half": "fp16",
+    "nvfp4": "nvfp4", "fp4": "nvfp4", "int4": "nvfp4", "4bit": "nvfp4",
 }
 
 
@@ -110,19 +129,26 @@ class ParakeetASR:
         return self._model is not None
 
     def ckpt_path(self) -> str:
-        """Where the pre-converted .nemo for this precision lives.
+        """Where the pre-built checkpoint for this precision lives.
 
-        Override per precision with PARAKEET_BF16_CKPT / PARAKEET_FP16_CKPT.
+        A .nemo file for bf16/fp16, a snapshot directory for nvfp4. Override per
+        precision with PARAKEET_BF16_CKPT / PARAKEET_FP16_CKPT /
+        PARAKEET_NVFP4_SNAPSHOT.
         """
         spec = PRECISIONS[self.precision]
         return os.getenv(spec["ckpt_env"]) or os.path.expanduser(
             f"~/.cache/blurt/{spec['file']}")
 
     def torch_dtype(self):
-        """The torch dtype this instance loads and runs in."""
+        """The torch dtype activations run in.
+
+        nvfp4 is W4A16: only the encoder's Linear *weights* are four bits, and
+        everything flowing between layers stays bf16, so this reports bfloat16 —
+        the weight format is not a torch dtype and never appears as one.
+        """
         import torch
 
-        return torch.bfloat16 if self.precision == "bf16" else torch.float16
+        return torch.float16 if self.precision == "fp16" else torch.bfloat16
 
     def load(self):
         if self._model is not None:
@@ -138,43 +164,59 @@ class ParakeetASR:
         torch.set_num_threads(int(os.getenv("OMP_NUM_THREADS", "2")))
 
         t0 = time.time()
-        if self.precision == "bf16":
-            if not (torch.cuda.is_available() and torch.cuda.is_bf16_supported()):
+        if self.precision == "fp16":
+            if not torch.cuda.is_available():
                 raise RuntimeError(
-                    "Blurt only supports parakeet-tdt-0.6b-v3 in bf16 on a CUDA GPU; "
-                    "no bf16-capable CUDA device was found. Pre-Ampere cards "
-                    "(sm_75 and older) can run PARAKEET_DTYPE=fp16 instead.")
-        elif not torch.cuda.is_available():
+                    "Blurt only supports parakeet-tdt-0.6b-v3 in fp16 on a CUDA GPU; "
+                    "no CUDA device was found.")
+        elif not (torch.cuda.is_available() and torch.cuda.is_bf16_supported()):
+            # nvfp4 lands here too: its activations are bf16, so it needs the same
+            # hardware support the bf16 path does.
             raise RuntimeError(
-                "Blurt only supports parakeet-tdt-0.6b-v3 in fp16 on a CUDA GPU; "
-                "no CUDA device was found.")
+                f"Blurt only supports parakeet-tdt-0.6b-v3 in {self.precision} on a "
+                "CUDA GPU; no bf16-capable CUDA device was found. Pre-Ampere cards "
+                "(sm_75 and older) can run PARAKEET_DTYPE=fp16 instead.")
         dtype = self.torch_dtype()
         ckpt = self.ckpt_path()
         if not os.path.exists(ckpt):
             ckpt = self._download_ckpt(self.precision) or ""
         if not ckpt or not os.path.exists(ckpt):
+            build_hint = (
+                "scripts/build_nvfp4_snapshot.py" if self.precision == "nvfp4"
+                else f"scripts/build_bf16_ckpt.py --dtype {self.precision}")
             raise RuntimeError(
                 f"No {self.precision} checkpoint available: neither a local cache "
                 f"({self.ckpt_path()}) nor a download from {MODEL_REPO} succeeded. "
-                "Check the network / HF_TOKEN, or pre-build one with "
-                f"scripts/build_bf16_ckpt.py --dtype {self.precision}.")
+                f"Check the network / HF_TOKEN, or pre-build one with {build_hint}.")
 
-        # The half-precision checkpoint loads straight onto the GPU with no fp32 ever
-        # materialising. set_default_dtype makes NeMo build the params in that dtype
-        # directly (peak ~1.3 GB, vs a ~2.5 GB fp32 transient if restored as fp32 then
-        # cast); the following to(dtype) also converts preprocessor buffers so the
-        # featurizer's output dtype matches the half-precision convs (else the mel
-        # features come out fp32 and the first conv raises a dtype mismatch).
         print(f"[asr] loading {self.precision} checkpoint {ckpt} ...", flush=True)
-        torch.set_default_dtype(dtype)
-        try:
-            model = nemo_asr.models.ASRModel.restore_from(ckpt, map_location="cuda")
-        finally:
-            torch.set_default_dtype(torch.float32)
-        model.eval()
-        model.to(dtype)
+        if PRECISIONS[self.precision]["kind"] == "snapshot":
+            # Pre-quantized: the packed 4-bit tensors are read straight onto the
+            # GPU, which never holds a bf16 copy (peak ~0.78 GB, against ~2.53 GB
+            # if the model were quantized after loading). See server/nvfp4.py.
+            from . import nvfp4
 
-        self.dtype = next(model.parameters()).dtype
+            model = nvfp4.load_snapshot(ckpt, device="cuda")
+        else:
+            # The half-precision checkpoint loads straight onto the GPU with no fp32
+            # ever materialising. set_default_dtype makes NeMo build the params in that
+            # dtype directly (peak ~1.3 GB, vs a ~2.5 GB fp32 transient if restored as
+            # fp32 then cast); the following to(dtype) also converts preprocessor
+            # buffers so the featurizer's output dtype matches the half-precision convs
+            # (else the mel features come out fp32 and the first conv raises a dtype
+            # mismatch).
+            torch.set_default_dtype(dtype)
+            try:
+                model = nemo_asr.models.ASRModel.restore_from(ckpt, map_location="cuda")
+            finally:
+                torch.set_default_dtype(torch.float32)
+            model.eval()
+            model.to(dtype)
+
+        # Report the dtype activations run in. Reading it off the first parameter
+        # would be wrong for nvfp4, where that may be a packed uint8 weight — a
+        # storage format, not the precision anything is computed in.
+        self.dtype = dtype
         _disable_cuda_graph_decoder(model)
         self._model = model
         self._torch = torch
@@ -184,22 +226,32 @@ class ParakeetASR:
 
     @staticmethod
     def _download_ckpt(precision: str = DEFAULT_PRECISION):
-        """Best-effort fetch of a pre-built .nemo from MODEL_REPO.
+        """Best-effort fetch of a pre-built checkpoint from MODEL_REPO.
 
-        Returns a local path to the checkpoint, or None on any failure (missing repo,
-        no network, private repo without auth); load() raises if it gets None and has
-        no local cache. The file is served from huggingface_hub's own cache, so later
-        starts return it without re-downloading; set HF_TOKEN to access a private
-        mirror.
+        Returns a local path — a .nemo file for the half precisions, a directory for
+        an nvfp4 snapshot — or None on any failure (missing repo, no network, private
+        repo without auth); load() raises if it gets None and has no local cache. Both
+        are served from huggingface_hub's own cache, so later starts return them
+        without re-downloading; set HF_TOKEN to access a private mirror.
         """
-        repo, fname = MODEL_REPO, PRECISIONS[precision]["file"]
+        spec = PRECISIONS[precision]
+        repo, fname = MODEL_REPO, spec["file"]
         try:
-            from huggingface_hub import hf_hub_download
+            from huggingface_hub import hf_hub_download, snapshot_download
         except Exception:
             return None
         try:
-            print(f"[asr] fetching pre-built {precision} checkpoint {repo}/{fname} ...", flush=True)
-            path = hf_hub_download(repo, fname)
+            print(f"[asr] fetching pre-built {precision} checkpoint {repo}/{fname} ...",
+                  flush=True)
+            if spec["kind"] == "snapshot":
+                # A snapshot is a directory, so pull just that prefix and point at
+                # the subdirectory inside the returned repo root.
+                root = snapshot_download(repo, allow_patterns=f"{fname}/*")
+                path = os.path.join(root, fname)
+                if not os.path.isdir(path):
+                    raise RuntimeError(f"{repo} has no {fname}/ directory")
+            else:
+                path = hf_hub_download(repo, fname)
             print(f"[asr] downloaded {precision} checkpoint -> {path}", flush=True)
             return path
         except Exception as e:  # load() turns a None into a clear no-checkpoint error
