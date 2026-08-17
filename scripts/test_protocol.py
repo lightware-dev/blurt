@@ -877,9 +877,84 @@ async def suite_interop(app):
             await asyncio.wait_for(server.wait_closed(), timeout=5)
 
 
+# ---- precision selection -------------------------------------------------
+
+async def suite_precision(_app):
+    """PARAKEET_DTYPE picks the checkpoint; bf16 stays the default.
+
+    Pure config, so it runs without a GPU: it guards the thing an fp16 build could
+    plausibly break — a stray env var silently moving the default server off bf16,
+    or the two precisions sharing one cache path and loading each other's weights.
+    """
+    import importlib
+    import os
+
+    import server.asr as asr
+
+    saved = {k: os.environ.get(k) for k in
+             ("PARAKEET_DTYPE", "PARAKEET_BF16_CKPT", "PARAKEET_FP16_CKPT")}
+    try:
+        for k in saved:
+            os.environ.pop(k, None)
+        asr = importlib.reload(asr)
+
+        check("default precision is bf16", asr.ParakeetASR().precision == "bf16")
+        check("aliases resolve", [asr.resolve_precision(x) for x in
+                                  ("fp16", "float16", "half", "BF16", None)]
+              == ["fp16", "fp16", "fp16", "bf16", "bf16"])
+        bad = False
+        try:
+            asr.resolve_precision("int8")
+        except ValueError:
+            bad = True
+        check("unknown dtype rejected", bad)
+
+        bf16, fp16 = asr.ParakeetASR("bf16"), asr.ParakeetASR("fp16")
+        check("precisions use distinct checkpoints", bf16.ckpt_path() != fp16.ckpt_path())
+        check("bf16 default path unchanged",
+              bf16.ckpt_path().endswith("parakeet-tdt-0.6b-v3-bf16.nemo"))
+        check("fp16 default path is the fp16 file",
+              fp16.ckpt_path().endswith("parakeet-tdt-0.6b-v3-fp16.nemo"))
+
+        os.environ["PARAKEET_FP16_CKPT"] = "/tmp/custom-fp16.nemo"
+        check("PARAKEET_FP16_CKPT overrides only fp16",
+              asr.ParakeetASR("fp16").ckpt_path() == "/tmp/custom-fp16.nemo"
+              and asr.ParakeetASR("bf16").ckpt_path() != "/tmp/custom-fp16.nemo")
+        os.environ.pop("PARAKEET_FP16_CKPT")
+
+        os.environ["PARAKEET_DTYPE"] = "fp16"
+        check("PARAKEET_DTYPE switches the engine", asr.ParakeetASR().precision == "fp16")
+        check("explicit argument beats the env var",
+              asr.ParakeetASR("bf16").precision == "bf16")
+
+        # No fp16 checkpoint is published, so load() must say "build one" rather
+        # than blaming the network for a download that was never attempted. Off a
+        # GPU the loader legitimately stops one step earlier, at "no CUDA device".
+        os.environ["PARAKEET_FP16_CKPT"] = "/nonexistent/nope.nemo"
+        asr = importlib.reload(asr)
+        err = ""
+        try:
+            asr.ParakeetASR("fp16").load()
+        except Exception as e:
+            err = str(e)
+        import torch  # noqa: PLC0415  (the rest of this suite is deliberately torch-free)
+        want = ("build_bf16_ckpt.py --dtype fp16" if torch.cuda.is_available()
+                else "no CUDA device was found")
+        check("missing fp16 checkpoint fails with the actionable message",
+              want in err, detail=err[:160])
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        importlib.reload(asr)
+
+
 # ---- runner --------------------------------------------------------------
 
 SUITES = {
+    "precision": suite_precision,
     "pcm": suite_pcm,
     "gate": suite_gate,
     "native": suite_native,
