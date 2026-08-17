@@ -98,9 +98,11 @@ pip install -r requirements.txt          # torch must match your CUDA (cu130 cov
 ./blurtd --port 8000                      # on another port
 ```
 
-The model is fixed at **`parakeet-tdt-0.6b-v3`**, run in bf16 on the GPU. On first
+The model is fixed at **`parakeet-tdt-0.6b-v3`**, run in bf16 on the GPU (fp16 on
+pre-Ampere cards — see [below](#pre-ampere-gpus--fp16)). On first
 start it downloads a **pre-built bf16 checkpoint** from HuggingFace
-(`lightware-dev/parakeet-tdt-0.6b-v3-bf16`, override with `PARAKEET_BF16_REPO`) into
+([`lightware-dev/parakeet-tdt-0.6b-v3`](https://huggingface.co/lightware-dev/parakeet-tdt-0.6b-v3),
+override with `PARAKEET_REPO`) into
 `~/.cache/blurt/`; every start after loads that bf16 file straight onto the GPU — no
 fp32 copy is ever fetched or materialised. If no cache and no download are available,
 it fails fast rather than falling back to the fp32 checkpoint. Pre-build the cache
@@ -116,7 +118,47 @@ machine — run `scripts/gen_certs.sh` to mint a self-signed pair for your LAN
 The default port **`25878`** is a mnemonic — `2-5-8-7-8` spells **BLURT** on a phone
 keypad (B→2, L→5, U→8, R→7, T→8). Override it with `--port` or `PORT`.
 
-Config (env or `.env`, all optional): `PARAKEET_BF16_CKPT`, `PARAKEET_BF16_REPO`,
+#### Pre-Ampere GPUs — fp16
+
+bf16 needs Ampere (sm_80) or newer. A GTX 16xx / RTX 20xx (sm_75) has no bf16 at
+all, so `blurtd` refuses to start on one. Those cards run the same model in fp16:
+
+```bash
+PARAKEET_DTYPE=fp16 ./blurtd
+```
+
+The fp16 checkpoint ships in the same HuggingFace repo as the bf16 one and is
+downloaded on first start, exactly like the default path. To build it locally
+instead, `python scripts/build_bf16_ckpt.py --dtype fp16` (~20 s, casts from the
+fp32 weights). bf16 remains the default and is untouched by this — the two
+checkpoints live side by side in `~/.cache/blurt/`.
+
+**fp16 costs nothing here.** Over 208 clips / 25.8 min (100 LibriSpeech test-clean
+utterances, the same utterances degraded with white noise at 10 and 5 dB SNR,
+babble at 5 dB and near-clipping gain, plus 8 synthetic clips), against an fp32
+reference of the same weights:
+
+| | WER, all 208 | WER, real speech | VRAM (weights / peak) | RTF, RTX 5090 |
+|---|---|---|---|---|
+| fp32 | 2.96% | 2.40% | 2.55 / 2.82 GB | 0.0114 |
+| bf16 | 2.99% | 2.40% | 1.31 / 1.43 GB | 0.0133 |
+| fp16 | 2.96% | 2.40% | 1.31 / 1.43 GB | 0.0118 |
+
+bf16 and fp16 return byte-identical transcripts on 207 of 208 clips; the WER
+difference is +0.03 pp overall (95% CI [0.00, +0.08], p=0.74) and exactly zero on
+real speech. Numerically fp16 is the *closer* of the two to fp32 — mean relative
+L2 error of the encoder output is 0.005 (cosine ≥ 0.995) against bf16's 0.044
+(cosine ≥ 0.835), which is what fp16's 3 extra mantissa bits buy. Nothing overflows
+fp16's narrower range: no non-finite activation appeared anywhere, including on the
+deliberately near-clipping clips. Reproduce with `scripts/make_eval_corpus.py` and
+`scripts/compare_precision.py`.
+
+Measured on an RTX 5090 (sm_120), which supports both formats — the quality
+figures carry to sm_75 (IEEE fp16, fp32 accumulation in cuBLAS), the speed figures
+do not. A 6 GB GTX 1660 has room for the 1.43 GB peak several times over.
+
+Config (env or `.env`, all optional): `PARAKEET_DTYPE`, `PARAKEET_BF16_CKPT`,
+`PARAKEET_FP16_CKPT`, `PARAKEET_REPO`,
 `HOST`, `PORT`, `AUTH_TOKEN`, `BLURT_CERT_DIR`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
 `VAD_THRESHOLD`, `VAD_PREROLL_MS`, `VAD_HANGOVER_MS`, `LOG_STATS`. See `.env.example`.
 `LOG_STATS` (default on) logs per-dictation metadata — packet count, bytes,

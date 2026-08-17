@@ -2,17 +2,23 @@
 Parakeet ASR engine — a thin, fast wrapper around NVIDIA NeMo's
 parakeet-tdt-0.6b-v3 model for in-memory streaming decode.
 
-Design goals: minimal VRAM (bf16, ~1.3 GB), low WER (full-context decode of
+Design goals: minimal VRAM (half precision, ~1.3 GB), low WER (full-context decode of
 each speech segment), and no per-call disk I/O (we feed numpy arrays straight to
 the model instead of writing a temp wav every tick like a naive prototype).
 
-We load a bf16 .nemo (see bf16_ckpt_path) directly onto the GPU in ~13 s, never
-materialising an fp32 copy. The checkpoint comes from, in order:
+We load a half-precision .nemo (see ckpt_path) directly onto the GPU in ~13 s,
+never materialising an fp32 copy. The checkpoint comes from, in order:
   1. a local cache file (from a prior run or scripts/build_bf16_ckpt.py),
-  2. else a direct download of the pre-built bf16 .nemo we publish on HF (BF16_REPO).
+  2. else a direct download of a pre-built .nemo we publish on HF (see MODEL_REPO).
 If neither is available, load() raises — the server does not fall back to fetching
 and converting the upstream fp32 checkpoint. Pre-build a local one offline with
 scripts/build_bf16_ckpt.py.
+
+Precision: bf16 by default. `PARAKEET_DTYPE=fp16` switches to a float16
+checkpoint instead, for pre-Ampere GPUs (GTX 16xx / RTX 20xx, sm_75) that have
+no bf16 support at all. fp16 has the same 16 bits but spends them differently:
+10 mantissa bits to bf16's 7 (finer), against a 65504 ceiling to bf16's ~3e38
+(narrower). scripts/compare_precision.py measures both on real audio.
 """
 
 from __future__ import annotations
@@ -36,14 +42,47 @@ if not hasattr(np, "sctypes"):
         "others": [bool, object, bytes, str, np.void],
     }
 
-# The one model we support: multilingual 0.6B TDT, run in bf16 on the GPU.
+# The one model we support: multilingual 0.6B TDT, run in half precision on the GPU.
 MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
 
-# Pre-built bf16 .nemo we publish so first run downloads it directly instead of
-# pulling the ~2.4 GB fp32 checkpoint and casting it (saves the one-off convert and
-# the fp32 RAM transient). Override with PARAKEET_BF16_REPO to host your own.
-BF16_REPO = os.getenv("PARAKEET_BF16_REPO") or "lightware-dev/parakeet-tdt-0.6b-v3-bf16"
+# Pre-built half-precision .nemo files we publish so first run downloads one directly
+# instead of pulling the ~2.4 GB fp32 checkpoint and casting it (saves the one-off
+# convert and the fp32 RAM transient). Both precisions live in this one repo, told
+# apart by filename. Override with PARAKEET_REPO to host your own mirror.
+MODEL_REPO = os.getenv("PARAKEET_REPO") or "lightware-dev/parakeet-tdt-0.6b-v3"
 BF16_FILE = "parakeet-tdt-0.6b-v3-bf16.nemo"
+
+# Per-precision knobs. bf16 is the default; fp16 exists for sm_75 cards
+# (GTX 16xx / RTX 20xx) that cannot do bf16 at all.
+PRECISIONS = {
+    "bf16": {
+        "file": BF16_FILE,
+        "ckpt_env": "PARAKEET_BF16_CKPT",
+    },
+    "fp16": {
+        "file": "parakeet-tdt-0.6b-v3-fp16.nemo",
+        "ckpt_env": "PARAKEET_FP16_CKPT",
+    },
+}
+DEFAULT_PRECISION = "bf16"
+
+# Accepted spellings of each precision, so PARAKEET_DTYPE takes the obvious names.
+_PRECISION_ALIASES = {
+    "bf16": "bf16", "bfloat16": "bf16",
+    "fp16": "fp16", "float16": "fp16", "half": "fp16",
+}
+
+
+def resolve_precision(name: str | None) -> str:
+    """Normalise a precision name ('float16' -> 'fp16'); None/'' means the default."""
+    if not name:
+        return DEFAULT_PRECISION
+    key = _PRECISION_ALIASES.get(str(name).strip().lower())
+    if key is None:
+        raise ValueError(
+            f"Unsupported PARAKEET_DTYPE {name!r}; expected one of "
+            f"{sorted(set(_PRECISION_ALIASES))}.")
+    return key
 
 
 class ParakeetASR:
@@ -55,8 +94,11 @@ class ParakeetASR:
     free.
     """
 
-    def __init__(self):
+    def __init__(self, precision: str | None = None):
         self.model_name = MODEL_ID
+        # Precision is fixed for the life of the instance: the checkpoint on disk
+        # already carries it, so switching would mean reloading anyway.
+        self.precision = resolve_precision(precision or os.getenv("PARAKEET_DTYPE"))
         self._model = None
         self._lock = threading.Lock()
         self.dtype = None
@@ -67,10 +109,20 @@ class ParakeetASR:
         """True once the model is resident and decodes will not block on a load."""
         return self._model is not None
 
-    def bf16_ckpt_path(self) -> str:
-        """Where the pre-converted bf16 .nemo lives (override with PARAKEET_BF16_CKPT)."""
-        return os.getenv("PARAKEET_BF16_CKPT") or os.path.expanduser(
-            "~/.cache/blurt/parakeet-tdt-0.6b-v3-bf16.nemo")
+    def ckpt_path(self) -> str:
+        """Where the pre-converted .nemo for this precision lives.
+
+        Override per precision with PARAKEET_BF16_CKPT / PARAKEET_FP16_CKPT.
+        """
+        spec = PRECISIONS[self.precision]
+        return os.getenv(spec["ckpt_env"]) or os.path.expanduser(
+            f"~/.cache/blurt/{spec['file']}")
+
+    def torch_dtype(self):
+        """The torch dtype this instance loads and runs in."""
+        import torch
+
+        return torch.bfloat16 if self.precision == "bf16" else torch.float16
 
     def load(self):
         if self._model is not None:
@@ -86,34 +138,41 @@ class ParakeetASR:
         torch.set_num_threads(int(os.getenv("OMP_NUM_THREADS", "2")))
 
         t0 = time.time()
-        if not (torch.cuda.is_available() and torch.cuda.is_bf16_supported()):
+        if self.precision == "bf16":
+            if not (torch.cuda.is_available() and torch.cuda.is_bf16_supported()):
+                raise RuntimeError(
+                    "Blurt only supports parakeet-tdt-0.6b-v3 in bf16 on a CUDA GPU; "
+                    "no bf16-capable CUDA device was found. Pre-Ampere cards "
+                    "(sm_75 and older) can run PARAKEET_DTYPE=fp16 instead.")
+        elif not torch.cuda.is_available():
             raise RuntimeError(
-                "Blurt only supports parakeet-tdt-0.6b-v3 in bf16 on a CUDA GPU; "
-                "no bf16-capable CUDA device was found.")
-        ckpt = self.bf16_ckpt_path()
+                "Blurt only supports parakeet-tdt-0.6b-v3 in fp16 on a CUDA GPU; "
+                "no CUDA device was found.")
+        dtype = self.torch_dtype()
+        ckpt = self.ckpt_path()
         if not os.path.exists(ckpt):
-            ckpt = self._download_bf16_ckpt() or ""
+            ckpt = self._download_ckpt(self.precision) or ""
         if not ckpt or not os.path.exists(ckpt):
             raise RuntimeError(
-                f"No bf16 checkpoint available: neither a local cache "
-                f"({self.bf16_ckpt_path()}) nor a download from {BF16_REPO} succeeded. "
+                f"No {self.precision} checkpoint available: neither a local cache "
+                f"({self.ckpt_path()}) nor a download from {MODEL_REPO} succeeded. "
                 "Check the network / HF_TOKEN, or pre-build one with "
-                "scripts/build_bf16_ckpt.py.")
+                f"scripts/build_bf16_ckpt.py --dtype {self.precision}.")
 
-        # The bf16 checkpoint loads straight onto the GPU with no fp32 ever
-        # materialising. set_default_dtype makes NeMo build the params bf16 directly
-        # (peak ~1.3 GB, vs a ~2.5 GB fp32 transient if restored as fp32 then cast);
-        # the following to(bfloat16) also converts preprocessor buffers so the
-        # featurizer's output dtype matches the bf16 convs (else the mel features come
-        # out fp32 and the first conv raises a dtype mismatch).
-        print(f"[asr] loading bf16 checkpoint {ckpt} ...", flush=True)
-        torch.set_default_dtype(torch.bfloat16)
+        # The half-precision checkpoint loads straight onto the GPU with no fp32 ever
+        # materialising. set_default_dtype makes NeMo build the params in that dtype
+        # directly (peak ~1.3 GB, vs a ~2.5 GB fp32 transient if restored as fp32 then
+        # cast); the following to(dtype) also converts preprocessor buffers so the
+        # featurizer's output dtype matches the half-precision convs (else the mel
+        # features come out fp32 and the first conv raises a dtype mismatch).
+        print(f"[asr] loading {self.precision} checkpoint {ckpt} ...", flush=True)
+        torch.set_default_dtype(dtype)
         try:
             model = nemo_asr.models.ASRModel.restore_from(ckpt, map_location="cuda")
         finally:
             torch.set_default_dtype(torch.float32)
         model.eval()
-        model.to(torch.bfloat16)
+        model.to(dtype)
 
         self.dtype = next(model.parameters()).dtype
         _disable_cuda_graph_decoder(model)
@@ -124,36 +183,38 @@ class ParakeetASR:
         return model
 
     @staticmethod
-    def _download_bf16_ckpt():
-        """Best-effort fetch of the pre-built bf16 .nemo from HF (BF16_REPO).
+    def _download_ckpt(precision: str = DEFAULT_PRECISION):
+        """Best-effort fetch of a pre-built .nemo from MODEL_REPO.
 
         Returns a local path to the checkpoint, or None on any failure (missing repo,
-        no network, private repo without auth); load() raises if it gets None and has no
-        local cache. The file is served from huggingface_hub's own cache, so later starts
-        return it without re-downloading; set HF_TOKEN to access a private mirror.
+        no network, private repo without auth); load() raises if it gets None and has
+        no local cache. The file is served from huggingface_hub's own cache, so later
+        starts return it without re-downloading; set HF_TOKEN to access a private
+        mirror.
         """
+        repo, fname = MODEL_REPO, PRECISIONS[precision]["file"]
         try:
             from huggingface_hub import hf_hub_download
         except Exception:
             return None
         try:
-            print(f"[asr] fetching pre-built bf16 checkpoint {BF16_REPO}/{BF16_FILE} ...", flush=True)
-            path = hf_hub_download(BF16_REPO, BF16_FILE)
-            print(f"[asr] downloaded bf16 checkpoint -> {path}", flush=True)
+            print(f"[asr] fetching pre-built {precision} checkpoint {repo}/{fname} ...", flush=True)
+            path = hf_hub_download(repo, fname)
+            print(f"[asr] downloaded {precision} checkpoint -> {path}", flush=True)
             return path
         except Exception as e:  # load() turns a None into a clear no-checkpoint error
-            print(f"[asr] warn: could not fetch bf16 checkpoint ({e})", flush=True)
+            print(f"[asr] warn: could not fetch {precision} checkpoint ({e})", flush=True)
             return None
 
     @staticmethod
-    def _save_bf16_ckpt(model, ckpt: str):
-        """Best-effort save of the bf16 model so subsequent starts load it directly."""
+    def _save_ckpt(model, ckpt: str):
+        """Best-effort save of the half-precision model so later starts load it directly."""
         try:
             os.makedirs(os.path.dirname(ckpt), exist_ok=True)
             model.save_to(ckpt)
-            print(f"[asr] cached bf16 checkpoint -> {ckpt}", flush=True)
+            print(f"[asr] cached checkpoint -> {ckpt}", flush=True)
         except Exception as e:  # a cache miss is not worth failing startup over
-            print(f"[asr] warn: could not cache bf16 checkpoint: {e}", flush=True)
+            print(f"[asr] warn: could not cache checkpoint: {e}", flush=True)
 
     def transcribe(self, audio_f32: np.ndarray) -> str:
         """Decode a mono float32 16 kHz array to text. Returns '' for empty/silent input."""
