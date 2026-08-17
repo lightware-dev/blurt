@@ -886,7 +886,7 @@ async def suite_precision(_app):
     plausibly break — a stray env var silently moving the default server off bf16,
     or the two precisions sharing one cache path and loading each other's weights.
     """
-    import importlib
+    import importlib.util  # .util for the torch probe below; also binds importlib
     import os
 
     import server.asr as asr
@@ -927,21 +927,26 @@ async def suite_precision(_app):
         check("explicit argument beats the env var",
               asr.ParakeetASR("bf16").precision == "bf16")
 
-        # No fp16 checkpoint is published, so load() must say "build one" rather
-        # than blaming the network for a download that was never attempted. Off a
-        # GPU the loader legitimately stops one step earlier, at "no CUDA device".
-        os.environ["PARAKEET_FP16_CKPT"] = "/nonexistent/nope.nemo"
-        asr = importlib.reload(asr)
-        err = ""
-        try:
-            asr.ParakeetASR("fp16").load()
-        except Exception as e:
-            err = str(e)
-        import torch  # noqa: PLC0415  (the rest of this suite is deliberately torch-free)
-        want = ("build_bf16_ckpt.py --dtype fp16" if torch.cuda.is_available()
-                else "no CUDA device was found")
-        check("missing fp16 checkpoint fails with the actionable message",
-              want in err, detail=err[:160])
+        # With no cache and no download, load() must say "build one" rather than
+        # leaving you to guess. Off a GPU the loader legitimately stops one step
+        # earlier, at "no CUDA device". Needs torch — the rest of this suite is
+        # deliberately torch-free, so CI without it skips just this check.
+        if importlib.util.find_spec("torch") is None:
+            print("  skip  missing fp16 checkpoint message (torch not installed)")
+        else:
+            import torch  # noqa: PLC0415  (guarded by the find_spec above)
+
+            os.environ["PARAKEET_FP16_CKPT"] = "/nonexistent/nope.nemo"
+            asr = importlib.reload(asr)
+            err = ""
+            try:
+                asr.ParakeetASR("fp16").load()
+            except Exception as e:
+                err = str(e)
+            want = ("build_bf16_ckpt.py --dtype fp16" if torch.cuda.is_available()
+                    else "no CUDA device was found")
+            check("missing fp16 checkpoint fails with the actionable message",
+                  want in err, detail=err[:160])
     finally:
         for k, v in saved.items():
             if v is None:
