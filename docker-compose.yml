@@ -1,6 +1,6 @@
-# blurtd — Parakeet dictation daemon.
+# blurtd — the Blurt dictation daemon.
 #
-#   docker compose up --build       # v3 multilingual on :25878
+#   docker compose up --build       # parakeet v3 multilingual on :25878
 #
 # Needs the NVIDIA Container Toolkit on the host (`--gpus all` equivalent).
 services:
@@ -31,6 +31,9 @@ services:
       # - ./certs:/app/certs:ro
     environment:
       # See .env.example for the full list. A few common ones:
+      # BLURT_ASR_ENGINE: whisper   # run Whisper instead of Parakeet (one or the
+      #                             # other — see .env.example for WHISPER_MODEL,
+      #                             # WHISPER_DTYPE, WHISPER_LANGUAGE)
       # AUTH_TOKEN: changeme    # require ?token=… on the ws connection
       # BLURT_AUTOCERT: "0"     # disable the auto cert, fall back to plain ws://
       # LOG_STATS: "0"          # silence per-dictation stats (packets/bytes/duration)

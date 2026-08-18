@@ -27,6 +27,12 @@ python-multipart>=0.0.9   # multipart forms for the OpenAI-compatible /v1 API
 uvicorn>=0.30.0
 websockets>=13.0
 nemo_toolkit[asr]>=2.0.0
+# The Whisper engine (BLURT_ASR_ENGINE=whisper) runs Whisper through
+# transformers. NeMo already pulls it in, so this changes nothing in the
+# resolved tree — it is stated because server/whisper.py imports it directly,
+# and a NeMo release that dropped the dependency would otherwise break that
+# engine silently at run time rather than here.
+transformers>=4.44.0
 # 4-bit weights (PARAKEET_DTYPE=nvfp4). Only imported when that precision is
 # selected, but it ships in the image so the option works out of the box; it is
 # ~15 MB and its dependencies are already pulled in by NeMo.

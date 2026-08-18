@@ -1,4 +1,12 @@
-"""Smoke test: load Parakeet 0.6b-v3, decode a sample wav in-memory, report VRAM/RTF."""
+"""Smoke test: load the configured ASR engine, decode a sample wav in-memory,
+report VRAM/RTF.
+
+Runs whichever engine BLURT_ASR_ENGINE selects (Parakeet by default), so the
+same numbers can be compared across engines:
+
+    python scripts/verify_asr.py
+    BLURT_ASR_ENGINE=whisper python scripts/verify_asr.py
+"""
 
 import sys
 import time
@@ -8,7 +16,8 @@ import numpy as np
 import soundfile as sf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from server.asr import ParakeetASR, SAMPLE_RATE  # noqa: E402
+from server.asr import SAMPLE_RATE  # noqa: E402
+from server.engine import create_asr  # noqa: E402
 
 
 def load_wav_16k_mono(path: str) -> np.ndarray:
@@ -24,7 +33,9 @@ def load_wav_16k_mono(path: str) -> np.ndarray:
 def main():
     import torch
 
-    asr = ParakeetASR()
+    asr = create_asr()
+    print(f"[verify] engine={asr.engine} model={asr.model_name} "
+          f"precision={asr.precision}", flush=True)
     asr.load()
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()

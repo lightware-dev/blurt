@@ -13,6 +13,8 @@ Three parts:
 - **`server/`** — a lean NVIDIA **Parakeet** streaming ASR server (Python + NeMo)
   that runs on any modern NVIDIA GPU (Turing or newer). Modest VRAM
   (~2.3 GB, bf16), low WER, near-realtime live partials over a WebSocket.
+  **Whisper** is available as an alternative engine (one runs at a time) when you
+  need its ~100 languages — see [**Choosing the engine**](#choosing-the-engine--parakeet-or-whisper).
 - **`clients/mac/`** — a native **macOS menu-bar app** (Swift, universal
   arm64 + x86_64). A global hotkey toggles dictation; live text shows in a HUD;
   the final transcript is typed into whatever field has focus.
@@ -96,11 +98,14 @@ pip install -r requirements.txt          # torch must match your CUDA (cu130 cov
 
 ./blurtd                                  # serve parakeet-tdt-0.6b-v3 (bf16, GPU)
 ./blurtd --port 8000                      # on another port
+./blurtd --engine whisper                 # serve Whisper instead
 ```
 
-The model is fixed at **`parakeet-tdt-0.6b-v3`**, run in bf16 on the GPU (fp16 on
+The default model is **`parakeet-tdt-0.6b-v3`**, run in bf16 on the GPU (fp16 on
 pre-Ampere cards — see [below](#pre-ampere-gpus--fp16); 4-bit
-[nvfp4](#tight-on-vram--nvfp4) if you are short of VRAM). On first
+[nvfp4](#tight-on-vram--nvfp4) if you are short of VRAM). **Whisper** is the
+alternative engine — see [**Choosing the engine**](#choosing-the-engine--parakeet-or-whisper).
+On first
 start it downloads a **pre-built bf16 checkpoint** from HuggingFace
 ([`lightware-dev/parakeet-tdt-0.6b-v3`](https://huggingface.co/lightware-dev/parakeet-tdt-0.6b-v3),
 override with `PARAKEET_REPO`) into
@@ -118,6 +123,52 @@ machine — run `scripts/gen_certs.sh` to mint a self-signed pair for your LAN
 **browser mic test page**.
 The default port **`25878`** is a mnemonic — `2-5-8-7-8` spells **BLURT** on a phone
 keypad (B→2, L→5, U→8, R→7, T→8). Override it with `--port` or `PORT`.
+
+### Choosing the engine — Parakeet or Whisper
+
+Blurt ships two ASR engines and runs **one per process**. Parakeet is the
+default and what the numbers on this page were measured with; `whisper` swaps in
+OpenAI's Whisper for the languages Parakeet doesn't cover, or when you want
+speech in one language typed out in English.
+
+```bash
+./blurtd --engine whisper                 # or BLURT_ASR_ENGINE=whisper ./blurtd
+WHISPER_MODEL=openai/whisper-large-v3 WHISPER_LANGUAGE=ja ./blurtd --engine whisper
+```
+
+|                | `parakeet` (default) | `whisper` |
+| -------------- | -------------------- | --------- |
+| Model | `nvidia/parakeet-tdt-0.6b-v3` | `openai/whisper-large-v3-turbo` (any Hub checkpoint via `WHISPER_MODEL`) |
+| Params / VRAM | 0.6 B, ~1.4 GB bf16 | 0.8 B, ~1.6 GB bf16 |
+| Languages | 25, European | ~100 |
+| Precisions | bf16, fp16, [nvfp4](#tight-on-vram--nvfp4) | bf16, fp16 |
+| Speed | faster (a TDT decoder emits several frames per step) | slower, still well inside realtime for dictation |
+| Extras | — | `WHISPER_TASK=translate` writes English from any input |
+
+Both are driven by the same VAD segmentation, serve the same three protocols,
+and are interchangeable to every client — the engine shows up only in the `info`
+message's `model` field. Why one at a time: two resident models double the VRAM
+this server is built to keep small, and the choice is a property of the box, not
+of the request.
+
+Whisper runs through 🤗 transformers on the torch build already in the image, so
+there is nothing extra to install; its weights come from the HuggingFace cache
+(`~/.cache/huggingface`) on first use, not from the pre-built `.nemo` files
+Parakeet loads. Whisper's encoder sees a fixed 30 s window, so a dictation
+longer than that is decoded sequentially and stitched — automatic, and slower
+per second of audio than a short one.
+
+Whisper pads short audio out to its 30 s window and, on a near-silent fragment,
+sometimes fills the rest with a stock phrase from its training data rather than
+returning nothing. The VAD in front of it is what prevents that — if filler text
+appears in a quiet room, raise `VAD_THRESHOLD` (0.6–0.7) and `MIN_SEGMENT_S`.
+Parakeet is much less prone to it, and the defaults were tuned on Parakeet.
+
+Language detection is per dictation and automatic on both engines. On Whisper it
+runs off the first window, which is where it goes wrong on a short, noisy start —
+pin `WHISPER_LANGUAGE=en` if you always dictate in one language. `WHISPER_DTYPE`
+is the fp16 escape hatch for pre-Ampere cards, exactly like `PARAKEET_DTYPE`
+below; there is no 4-bit option for Whisper.
 
 #### Pre-Ampere GPUs — fp16
 
@@ -201,8 +252,9 @@ GPU and a calibration corpus from `scripts/make_eval_corpus.py`); `--verify`
 reloads the result and requires it to reproduce the transcripts it was built with,
 exactly.
 
-Config (env or `.env`, all optional): `PARAKEET_DTYPE`, `PARAKEET_BF16_CKPT`,
+Config (env or `.env`, all optional): `BLURT_ASR_ENGINE`, `PARAKEET_DTYPE`, `PARAKEET_BF16_CKPT`,
 `PARAKEET_FP16_CKPT`, `PARAKEET_NVFP4_SNAPSHOT`, `PARAKEET_REPO`,
+`WHISPER_MODEL`, `WHISPER_DTYPE`, `WHISPER_LANGUAGE`, `WHISPER_TASK`,
 `HOST`, `PORT`, `AUTH_TOKEN`, `BLURT_CERT_DIR`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
 `VAD_THRESHOLD`, `VAD_PREROLL_MS`, `VAD_HANGOVER_MS`, `LOG_STATS`. See `.env.example`.
 `LOG_STATS` (default on) logs per-dictation metadata — packet count, bytes,
@@ -473,7 +525,7 @@ parts build independently: `server/` (Python), `clients/mac/` (Swift), and
 ## Files
 
 ```
-server/            Parakeet streaming server (app, asr, vad, pcm, openai_api, wyoming)
+server/            streaming server (app, engine, asr/whisper, vad, pcm, openai_api, wyoming)
 clients/mac/       Swift menu-bar app + build-app.sh + notarize.sh
 clients/windows/   .NET 8 / WPF tray app + Blurt.csproj
 www/               marketing site (Next.js) for blurtvoice.com
