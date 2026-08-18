@@ -99,7 +99,8 @@ pip install -r requirements.txt          # torch must match your CUDA (cu130 cov
 ```
 
 The model is fixed at **`parakeet-tdt-0.6b-v3`**, run in bf16 on the GPU (fp16 on
-pre-Ampere cards — see [below](#pre-ampere-gpus--fp16)). On first
+pre-Ampere cards — see [below](#pre-ampere-gpus--fp16); 4-bit
+[nvfp4](#tight-on-vram--nvfp4) if you are short of VRAM). On first
 start it downloads a **pre-built bf16 checkpoint** from HuggingFace
 ([`lightware-dev/parakeet-tdt-0.6b-v3`](https://huggingface.co/lightware-dev/parakeet-tdt-0.6b-v3),
 override with `PARAKEET_REPO`) into
@@ -157,8 +158,51 @@ Measured on an RTX 5090 (sm_120), which supports both formats — the quality
 figures carry to sm_75 (IEEE fp16, fp32 accumulation in cuBLAS), the speed figures
 do not. A 6 GB GTX 1660 has room for the 1.43 GB peak several times over.
 
+#### Tight on VRAM — nvfp4
+
+`PARAKEET_DTYPE=nvfp4` runs the encoder's weights in **NVFP4**, NVIDIA's 4-bit
+float: E2M1 values in blocks of 16, each block carrying its own fp8 scale.
+Activations stay bf16, so this needs an Ampere-or-newer card like the default.
+
+```bash
+PARAKEET_DTYPE=nvfp4 ./blurtd
+```
+
+**It halves memory and costs latency, not accuracy.** Same corpus and method as
+the fp16 table above:
+
+| | WER, all 208 | vs bf16 | VRAM (weights / peak) | RTF, RTX 5090 |
+|---|---|---|---|---|
+| bf16 | 2.99% | — | 1.31 / 1.43 GB | 0.0134 |
+| nvfp4 | 2.86% | −0.13 pp, 95% CI [−0.69, +0.30] | 0.51 / 0.78 GB | 0.0316 |
+
+The WER difference is not significant (p=0.69) — nvfp4 is *not* better than bf16,
+the corpus simply cannot tell them apart, and at 208 clips it could not resolve a
+difference below about 0.3 pp anyway. What it can see is that four bits changes
+the exact text of 14% of clips while leaving the aggregate untouched, and that the
+encoder output drifts 5x further from fp32 than bf16 does (relative L2 0.226
+against 0.044) without a single non-finite activation.
+
+The cost is speed: **2.4x the decode latency**. Parakeet's encoder is bound by
+kernel launches rather than arithmetic — a 2.2 s clip and a 35.6 s clip both take
+about 27 ms — so cheaper multiplies buy nothing and the extra unpack per layer is
+pure overhead. At RTF 0.032 that is still ~30x faster than real time, which is
+imperceptible for dictation, but do not reach for nvfp4 expecting throughput.
+
+Unlike bf16 and fp16, this checkpoint is **not a cast** — 4-bit scales are chosen
+by calibrating on real audio, so it ships pre-quantized as a snapshot directory
+(packed weights in safetensors, recipe in JSON, no pickles anywhere). It downloads
+on first start like the others. The GPU never holds a bf16 copy: packed tensors go
+straight onto the device, peaking at 0.78 GB against the 2.53 GB a load-time
+quantization would need — which is the whole point, since a card that small could
+not have quantized the model itself. Rebuild it with
+`python scripts/build_nvfp4_snapshot.py --calib <corpus> --verify` (~35 s, needs a
+GPU and a calibration corpus from `scripts/make_eval_corpus.py`); `--verify`
+reloads the result and requires it to reproduce the transcripts it was built with,
+exactly.
+
 Config (env or `.env`, all optional): `PARAKEET_DTYPE`, `PARAKEET_BF16_CKPT`,
-`PARAKEET_FP16_CKPT`, `PARAKEET_REPO`,
+`PARAKEET_FP16_CKPT`, `PARAKEET_NVFP4_SNAPSHOT`, `PARAKEET_REPO`,
 `HOST`, `PORT`, `AUTH_TOKEN`, `BLURT_CERT_DIR`, `SILENCE_MS`, `PARTIAL_INTERVAL_MS`, `MAX_SEGMENT_S`,
 `VAD_THRESHOLD`, `VAD_PREROLL_MS`, `VAD_HANGOVER_MS`, `LOG_STATS`. See `.env.example`.
 `LOG_STATS` (default on) logs per-dictation metadata — packet count, bytes,

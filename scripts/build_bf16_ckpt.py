@@ -26,7 +26,12 @@ from server.asr import PRECISIONS, ParakeetASR  # noqa: E402
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dtype", default="bf16", choices=sorted(PRECISIONS),
+    # Only the precisions that are a pure cast of the fp32 weights. nvfp4 is not
+    # one of them — its scales come from calibrating on real audio, so it has its
+    # own builder in scripts/build_nvfp4_snapshot.py.
+    ap.add_argument("--dtype", default="bf16",
+                    choices=sorted(p for p, spec in PRECISIONS.items()
+                                   if spec["kind"] == "nemo"),
                     help="precision to build (default: bf16)")
     ap.add_argument("--force", action="store_true", help="rebuild if checkpoint exists")
     args = ap.parse_args()

@@ -56,8 +56,20 @@ uv pip compile requirements.in \
 echo
 echo "Wrote requirements.txt ($(grep -c '^[a-z0-9]' requirements.txt) packages pinned)."
 echo "Sanity check — none of the cu130-provided packages should appear:"
-if grep -qE '^(torch==|triton==|nvidia-)' requirements.txt; then
-    echo "  FAIL: a cu130-provided package leaked into the lock" >&2
+# Checked against EXCLUDE itself rather than a blanket `^nvidia-` match: not every
+# nvidia-* package comes from the cu130 index. nvidia-modelopt (4-bit weights) and
+# its nvidia-ml-py dependency are ordinary PyPI wheels that belong in the lock, and
+# a prefix match would reject them. Each entry still matches its -cuXX variants,
+# which is how `nvidia-cublas` catches `nvidia-cublas-cu13` — but the suffix has to
+# start with a hyphen, or `torch` would also match `torchaudio`, which belongs here.
+leaked=()
+for pkg in "${EXCLUDE[@]}"; do
+    if grep -qE "^${pkg}(-[a-z0-9]+)*==" requirements.txt; then
+        leaked+=("$pkg")
+    fi
+done
+if (( ${#leaked[@]} )); then
+    echo "  FAIL: cu130-provided package(s) leaked into the lock: ${leaked[*]}" >&2
     exit 1
 fi
 echo "  ok"

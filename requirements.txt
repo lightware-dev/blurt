@@ -1708,6 +1708,10 @@ markdown==3.10.2 \
     --hash=sha256:994d51325d25ad8aa7ce4ebaec003febcce822c3f8c911e3b17c52f7f589f950 \
     --hash=sha256:e91464b71ae3ee7afd3017d9f358ef0baf158fd9a298db92f1d4761133824c36
     # via tensorboard
+markdown-it-py==4.2.0 \
+    --hash=sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49 \
+    --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
+    # via rich
 markupsafe==3.0.3 \
     --hash=sha256:0303439a41979d9e74d18ff5e2dd8c43ed6c6001fd40e5bf2e43f7bd9bbc523f \
     --hash=sha256:068f375c472b3e7acbe2d5318dea141359e6900156b5b2ba06a30b169086b91a \
@@ -1858,6 +1862,10 @@ matplotlib-inline==0.2.2 \
     --hash=sha256:3c821cf1c209f59fb2d2d64abbf5b23b67bcb2210d663f9918dd851c6da1fcf6 \
     --hash=sha256:72f3fe8fce36b70d4a5b612f899090cd0401deddc4ea90e1572b9f4bfb058c79
     # via ipython
+mdurl==0.1.2 \
+    --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 \
+    --hash=sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba
+    # via markdown-it-py
 mediapy==1.1.6 \
     --hash=sha256:9f44b760400964d8bea5121a213f94dc9a225d026d6a819901283a695e585634 \
     --hash=sha256:c74370808b445666f95272bfdf0eb5707a43b7e05e5527f2dd0830e6892f976f
@@ -2161,6 +2169,27 @@ networkx==3.6.1 \
     --hash=sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509 \
     --hash=sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762
     # via torch
+ninja==1.13.0 \
+    --hash=sha256:11be2d22027bde06f14c343f01d31446747dbb51e72d00decca2eb99be911e2f \
+    --hash=sha256:1c97223cdda0417f414bf864cfb73b72d8777e57ebb279c5f6de368de0062988 \
+    --hash=sha256:3c0b40b1f0bba764644385319028650087b4c1b18cdfa6f45cb39a3669b81aa9 \
+    --hash=sha256:3d00c692fb717fd511abeb44b8c5d00340c36938c12d6538ba989fe764e79630 \
+    --hash=sha256:3d7d7779d12cb20c6d054c61b702139fd23a7a964ec8f2c823f1ab1b084150db \
+    --hash=sha256:4a40ce995ded54d9dc24f8ea37ff3bf62ad192b547f6c7126e7e25045e76f978 \
+    --hash=sha256:4be9c1b082d244b1ad7ef41eb8ab088aae8c109a9f3f0b3e56a252d3e00f42c1 \
+    --hash=sha256:5f8e1e8a1a30835eeb51db05cf5a67151ad37542f5a4af2a438e9490915e5b72 \
+    --hash=sha256:60056592cf495e9a6a4bea3cd178903056ecb0943e4de45a2ea825edb6dc8d3e \
+    --hash=sha256:6739d3352073341ad284246f81339a384eec091d9851a886dfa5b00a6d48b3e2 \
+    --hash=sha256:8cfbb80b4a53456ae8a39f90ae3d7a2129f45ea164f43fadfa15dc38c4aef1c9 \
+    --hash=sha256:aa45b4037b313c2f698bc13306239b8b93b4680eb47e287773156ac9e9304714 \
+    --hash=sha256:b4f2a072db3c0f944c32793e91532d8948d20d9ab83da9c0c7c15b5768072200 \
+    --hash=sha256:be7f478ff9f96a128b599a964fc60a6a87b9fa332ee1bd44fa243ac88d50291c \
+    --hash=sha256:d741a5e6754e0bda767e3274a0f0deeef4807f1fec6c0d7921a0244018926ae5 \
+    --hash=sha256:e8bad11f8a00b64137e9b315b137d8bb6cbf3086fbdc43bf1f90fd33324d2e96 \
+    --hash=sha256:fa2a8bfc62e31b08f83127d1613d10821775a0eb334197154c4d6067b7068ff1 \
+    --hash=sha256:fb46acf6b93b8dd0322adc3a4945452a4e774b75b91293bafcc7b7f8e6517dfa \
+    --hash=sha256:fb8ee8719f8af47fed145cced4a85f0755dd55d45b2bddaf7431fa89803c5f3e
+    # via nvidia-modelopt
 numba==0.66.0 \
     --hash=sha256:0999e3ee1b18c48e1fb51d11af35ef59852c7f4f50569c9550c25faef0616ad1 \
     --hash=sha256:2338cc0d43609fe448930848fd35a5bc688761b986f81b597a6f45cc0f8c9577 \
@@ -2337,6 +2366,7 @@ numpy==2.4.6 \
     #   nemo-toolkit
     #   numba
     #   numexpr
+    #   nvidia-modelopt
     #   onnx
     #   optuna
     #   pandas
@@ -2372,12 +2402,20 @@ nv-one-logger-training-telemetry==2.3.1 \
     # via
     #   nemo-toolkit
     #   nv-one-logger-pytorch-lightning-integration
+nvidia-ml-py==13.610.43 \
+    --hash=sha256:65437eb73d68d0c62c931ca4d45038472faff03bd0b8729abba4b899f70d60f2 \
+    --hash=sha256:f13c72698edef492f985cc225f14faafe68ae065a2e407f45bdf6f4b9b43fde8
+    # via nvidia-modelopt
+nvidia-modelopt==0.45.0 \
+    --hash=sha256:04e1d787898e44e7281022f4772ee57bf59d1224cbcdd10d9487c2a110687a30
+    # via -r requirements.in
 omegaconf==2.3.0 \
     --hash=sha256:7b4df175cdb08ba400f45cae3bdcae7ba8365db4d165fc65fd04b050ab63b46b \
     --hash=sha256:d5d4b6d29955cc50ad50c46dc269bcd92c6e00f5f90d23ab5fee7bfca4ba4cc7
     # via
     #   hydra-core
     #   nemo-toolkit
+    #   nvidia-modelopt
 onnx==1.22.0 \
     --hash=sha256:19e45e4af88e3fe3261458d4b8cc461957ae2782a358a3560503569bf3b23b72 \
     --hash=sha256:1d0a2bdb15eb2b3cb65c438f3423d9620d14fdce32f92380e6bb1b2e09568ef5 \
@@ -2426,6 +2464,7 @@ packaging==24.2 \
     #   lightning-utilities
     #   matplotlib
     #   nemo-toolkit
+    #   nvidia-modelopt
     #   optuna
     #   peft
     #   pooch
@@ -2778,6 +2817,10 @@ ptyprocess==0.7.0 ; sys_platform != 'emscripten' and sys_platform != 'win32' \
     --hash=sha256:4b41f3967fce3af57cc7e94b888626c18bf37a083e3651ca8feeb66d492fef35 \
     --hash=sha256:5c5d0a3b48ceee0b48485e0c26037c0acd7d29765ca3fbb5cb3831d347423220
     # via pexpect
+pulp==3.3.2 \
+    --hash=sha256:631b166f72086971a9597f7a0233ababa99bb8d50a01cd543f7758be5a9f86c0 \
+    --hash=sha256:d0904700c207ac11e25e3b1213b70eae1d6fb25faa719d75f3f15054901258c0
+    # via nvidia-modelopt
 pure-eval==0.2.3 \
     --hash=sha256:1db8e35b67b3d218d818ae653e27f06c3aa420901fa7b081ca98cbedc874e0d0 \
     --hash=sha256:5f4e983f40564c576c7c8635ae88db5956bb2229d7e9237d03b3c0b0190eaf42
@@ -2852,6 +2895,7 @@ pydantic==2.13.4 \
     # via
     #   fastapi
     #   nv-one-logger-core
+    #   nvidia-modelopt
     #   wandb
 pydantic-core==2.46.4 \
     --hash=sha256:00c603d540afdd6b80eb39f078f33ebd46211f02f33e34a32d9f053bba711de0 \
@@ -2985,6 +3029,7 @@ pygments==2.20.0 \
     # via
     #   ipython
     #   ipython-pygments-lexers
+    #   rich
 pyloudnorm==0.2.0 \
     --hash=sha256:8bf597658ea4e1975c275adf490f6deb5369ea409f2901f939915efa4b681b16 \
     --hash=sha256:9bb69afb904f59d007a7f9ba3d75d16fb8aeef35c44d6df822a9f192d69cf13f
@@ -3116,6 +3161,7 @@ pyyaml==6.0.3 \
     #   lhotse
     #   libcst
     #   lightning
+    #   nvidia-modelopt
     #   omegaconf
     #   optuna
     #   peft
@@ -3344,6 +3390,7 @@ regex==2026.7.19 \
     --hash=sha256:fe31f28c94402043161876a258a9c6f757cb485905c7614ce8d6cd40e6b7bdc1 \
     --hash=sha256:ffd8893ccc1c2fce6e0d6ca402d716fe1b29db70c7132609a05955e31b2aa8f2
     # via
+    #   nvidia-modelopt
     #   sacrebleu
     #   sacremoses
     #   transformers
@@ -3361,6 +3408,10 @@ resampy==0.4.3 \
     --hash=sha256:a0d1c28398f0e55994b739650afef4e3974115edbe96cd4bb81968425e916e47 \
     --hash=sha256:ad2ed64516b140a122d96704e32bc0f92b23f45419e8b8f478e5a05f83edcebd
     # via nemo-toolkit
+rich==15.0.0 \
+    --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb \
+    --hash=sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36
+    # via nvidia-modelopt
 ruamel-yaml==0.19.1 \
     --hash=sha256:27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93 \
     --hash=sha256:53eb66cd27849eff968ebf8f0bf61f46cdac2da1d1f3576dd4ccee9b25c31993
@@ -3393,6 +3444,7 @@ safetensors==0.8.0 \
     --hash=sha256:fd6f3f93c9a0a7cc2788ee63fb763353d4bd2e89b0751bc78fcf7dda00bea774
     # via
     #   accelerate
+    #   nvidia-modelopt
     #   peft
     #   transformers
 scikit-learn==1.9.0 \
@@ -3496,6 +3548,7 @@ scipy==1.17.1 ; python_full_version < '3.12' \
     # via
     #   librosa
     #   nemo-toolkit
+    #   nvidia-modelopt
     #   pyannote-metrics
     #   pyloudnorm
     #   scikit-learn
@@ -3544,6 +3597,7 @@ scipy==1.18.0 ; python_full_version >= '3.12' \
     # via
     #   librosa
     #   nemo-toolkit
+    #   nvidia-modelopt
     #   pyannote-metrics
     #   pyloudnorm
     #   scikit-learn
@@ -3616,6 +3670,7 @@ setuptools==81.0.0 \
     # via
     #   nemo-toolkit
     #   nv-one-logger-pytorch-lightning-integration
+    #   nvidia-modelopt
     #   tensorboard
     #   torch
 silero-vad==6.2.1 \
@@ -3986,6 +4041,7 @@ tqdm==4.70.0 \
     #   lhotse
     #   lightning
     #   nemo-toolkit
+    #   nvidia-modelopt
     #   optuna
     #   peft
     #   pytorch-lightning
