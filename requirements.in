@@ -37,6 +37,13 @@ transformers>=4.44.0
 # selected, but it ships in the image so the option works out of the box; it is
 # ~15 MB and its dependencies are already pulled in by NeMo.
 nvidia-modelopt>=0.45.0
+# 4-bit weights for the Whisper engine (WHISPER_DTYPE=nf4). A second quantizer
+# looks redundant beside modelopt, and it is not: modelopt's NVFP4 costs Whisper
+# 4.1x decode latency where bitsandbytes' NF4 costs 1.7x, because bitsandbytes
+# fuses dequantization into the matmul instead of unpacking to bf16 first. See
+# server/whisper.py. Unlike the runtimes that module declines to take on, this
+# one links against torch's own CUDA rather than shipping a second copy of it.
+bitsandbytes>=0.50.0
 silero-vad>=5.1
 soundfile>=0.12.0
 librosa>=0.10.0

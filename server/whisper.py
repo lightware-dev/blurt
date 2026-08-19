@@ -19,8 +19,24 @@ fine-tune of your own). Weights come from the HuggingFace cache, so they land in
 the same ~/.cache the container already persists.
 
 Precision mirrors the Parakeet engine: bf16 by default, `WHISPER_DTYPE=fp16` for
-pre-Ampere cards (sm_75) that have no bf16 at all. There is no 4-bit option here —
-nvfp4 is a Parakeet-only path with a pre-quantized snapshot behind it.
+pre-Ampere cards (sm_75) that have no bf16 at all, and `WHISPER_DTYPE=nf4` for
+4-bit weights when VRAM is what you are short of.
+
+The 4-bit format is **NF4** through bitsandbytes, not the NVFP4 snapshot the
+Parakeet engine ships, and the reason is measurement rather than taste. Over the
+repo's 208-clip corpus both hold WER within noise and both cut the weights to
+about a third, but NVFP4 costs 4.1x the decode latency here against NF4's 1.7x:
+the modelopt path unpacks each weight back to bf16 and calls an ordinary GEMM,
+while bitsandbytes fuses the dequantization into its matmul. Parakeet does not
+pay that because its encoder is bound by kernel launches rather than arithmetic;
+Whisper's decoder, generating a token at a time, pays in full.
+
+NF4 also needs no snapshot. modelopt quantizes from the loaded bf16 weights, so
+building it peaks *above* the model it replaces (1.8 GB against 1.6 GB) — useless
+on a card that could not hold bf16 in the first place, which is why
+server/nvfp4.py exists. bitsandbytes quantizes layer by layer as the checkpoint
+streams in and peaks at 0.81 GB, so there is nothing to pre-build, calibrate or
+host: WHISPER_DTYPE=nf4 and the next start is 4-bit.
 
 Language: Whisper auto-detects by default, exactly like Parakeet. Pin it with
 WHISPER_LANGUAGE=en when you always dictate in one language — detection runs off
@@ -62,14 +78,17 @@ DEFAULT_MODEL = "openai/whisper-large-v3-turbo"
 # and takes the long-form path in transcribe().
 CHUNK_S = 30
 
-# Half precisions only: fp32 doubles VRAM for no accuracy that survives a
-# dictation, and 4-bit here would need a calibrated snapshot we do not publish.
-PRECISIONS = ("bf16", "fp16")
+# No fp32: it doubles VRAM for no accuracy that survives a dictation. nf4 is
+# weight-only — activations still run in bf16, which is why it needs the same
+# Ampere-or-newer card the default does.
+PRECISIONS = ("bf16", "fp16", "nf4")
 DEFAULT_PRECISION = "bf16"
 
 _PRECISION_ALIASES = {
     "bf16": "bf16", "bfloat16": "bf16",
     "fp16": "fp16", "float16": "fp16", "half": "fp16",
+    # "4bit" is what the transformers flag is called, so people reach for it.
+    "nf4": "nf4", "4bit": "nf4", "int4": "nf4",
 }
 
 # The language codes Whisper's multilingual checkpoints are trained on, for the
@@ -99,7 +118,7 @@ def resolve_precision(name: str | None) -> str:
     if key is None:
         raise ValueError(
             f"Unsupported WHISPER_DTYPE {name!r}; expected one of {sorted(PRECISIONS)}. "
-            "(4-bit is a Parakeet-only option.)")
+            "(The 4-bit format here is nf4, via bitsandbytes; nvfp4 is Parakeet-only.)")
     return key
 
 
@@ -209,10 +228,61 @@ class WhisperASR:
         return "1"
 
     def torch_dtype(self):
-        """The torch dtype weights and activations run in."""
+        """The torch dtype activations run in.
+
+        For nf4 this is the *compute* dtype, not the weights': the packed 4-bit
+        weights dequantize into it on the way into each matmul. transcribe() casts
+        the mel features to this, so it has to be the activation dtype either way.
+        """
         import torch
 
         return torch.float16 if self.precision == "fp16" else torch.bfloat16
+
+    def _require_device(self, torch):
+        """Raise with an actionable message unless this precision can run here."""
+        if self.precision == "fp16":
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    f"Blurt only supports {self.model_name} in fp16 on a CUDA GPU; "
+                    "no CUDA device was found.")
+            return
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+            return
+        if self.precision == "nf4":
+            raise RuntimeError(
+                f"Blurt only supports {self.model_name} in nf4 on a bf16-capable CUDA "
+                "GPU: the weights are 4-bit but they dequantize into bf16 to compute, "
+                "so this needs Ampere (sm_80) or newer like the default does. "
+                "Pre-Ampere cards (sm_75 and older) can run WHISPER_DTYPE=fp16, at "
+                "full weight size.")
+        raise RuntimeError(
+            f"Blurt only supports {self.model_name} in bf16 on a CUDA GPU; no "
+            "bf16-capable CUDA device was found. Pre-Ampere cards (sm_75 and "
+            "older) can run WHISPER_DTYPE=fp16 instead.")
+
+    def _nf4_config(self, torch):
+        """The bitsandbytes recipe for WHISPER_DTYPE=nf4."""
+        try:
+            import bitsandbytes  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                "WHISPER_DTYPE=nf4 needs bitsandbytes, which is not installed. It "
+                "ships in the Docker image; from a source checkout install it with "
+                "`pip install -r requirements.txt`.") from exc
+        from transformers import BitsAndBytesConfig
+
+        return BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            # Quantizes the block scales too, another ~0.4 bits per weight. Free
+            # accuracy-wise at this size and it is what the measurement used.
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=self.torch_dtype(),
+            # proj_out shares its storage with the token embedding, so packing it
+            # to 4 bits would take the embedding with it. It is 66 M params that
+            # stay bf16 — most of why 4-bit weights land at 0.53 GB, not 0.40.
+            llm_int8_skip_modules=["proj_out"],
+        )
 
     def load(self):
         if self._model is not None:
@@ -225,37 +295,46 @@ class WhisperASR:
         torch.set_num_threads(int(os.getenv("OMP_NUM_THREADS", "2")))
 
         t0 = time.time()
-        if self.precision == "fp16":
-            if not torch.cuda.is_available():
-                raise RuntimeError(
-                    f"Blurt only supports {self.model_name} in fp16 on a CUDA GPU; "
-                    "no CUDA device was found.")
-        elif not (torch.cuda.is_available() and torch.cuda.is_bf16_supported()):
-            raise RuntimeError(
-                f"Blurt only supports {self.model_name} in bf16 on a CUDA GPU; no "
-                "bf16-capable CUDA device was found. Pre-Ampere cards (sm_75 and "
-                "older) can run WHISPER_DTYPE=fp16 instead.")
+        self._require_device(torch)
 
         dtype = self.torch_dtype()
-        print(f"[asr] loading whisper {self.model_name} ({self.precision}) ...", flush=True)
+        quantized = self.precision == "nf4"
+        # Built before the line below is printed, because for nf4 this is where a
+        # missing bitsandbytes is caught — and "loading ..." followed by an import
+        # error reads as a download failure rather than a missing package.
+        #
         # low_cpu_mem_usage streams the weights straight into half-precision params
         # instead of building an fp32 copy on the host first — what set_default_dtype
-        # buys the Parakeet loader.
+        # buys the Parakeet loader. The 4-bit path takes device_map instead, which
+        # implies the same streaming and additionally quantizes each layer as it
+        # lands, so the full bf16 model never exists anywhere.
         #
         # The dtype argument was renamed (torch_dtype -> dtype) around transformers
         # 4.56. Old versions reject the new name, some swallow it as an unknown
         # config kwarg and hand back fp32 — twice the VRAM, silently — so the result
         # is checked rather than trusted. We pin 4.57, where `dtype` is the name.
+        kwargs = ({"quantization_config": self._nf4_config(torch), "device_map": {"": 0}}
+                  if quantized else {"low_cpu_mem_usage": True})
+        print(f"[asr] loading whisper {self.model_name} ({self.precision}) ...", flush=True)
         try:
             model = WhisperForConditionalGeneration.from_pretrained(
-                self.model_name, dtype=dtype, low_cpu_mem_usage=True)
+                self.model_name, dtype=dtype, **kwargs)
         except TypeError:
             model = WhisperForConditionalGeneration.from_pretrained(
-                self.model_name, torch_dtype=dtype, low_cpu_mem_usage=True)
-        if next(model.parameters()).dtype != dtype:
-            print(f"[asr] warn: transformers ignored dtype={dtype}; casting", flush=True)
-            model = model.to(dtype)
-        model.to("cuda")
+                self.model_name, torch_dtype=dtype, **kwargs)
+        if quantized:
+            # Params are uint8 blocks now, so the dtype check below cannot apply,
+            # and .to() on a 4-bit model raises — device_map already placed it.
+            if not any(getattr(p, "quant_state", None) is not None
+                       for p in model.parameters()):
+                raise RuntimeError(
+                    "bitsandbytes returned an unquantized model for WHISPER_DTYPE=nf4; "
+                    "it would use full bf16 VRAM while claiming 4-bit.")
+        else:
+            if next(model.parameters()).dtype != dtype:
+                print(f"[asr] warn: transformers ignored dtype={dtype}; casting", flush=True)
+                model = model.to(dtype)
+            model.to("cuda")
         model.eval()
         # Older checkpoints ship a generation config that hard-codes the decoder
         # prompt (language + task) in forced_decoder_ids. That collides with the
@@ -276,7 +355,10 @@ class WhisperASR:
         self.dtype = dtype
         self._model = model
         self._torch = torch
-        print(f"[asr] ready in {time.time()-t0:.1f}s (dtype={self.dtype})", flush=True)
+        # For nf4 the weights are not in `dtype` — it is what they compute in — so
+        # say both rather than let the line imply a bf16 model.
+        detail = (f"nf4 weights, {self.dtype} compute" if quantized else f"dtype={self.dtype}")
+        print(f"[asr] ready in {time.time()-t0:.1f}s ({detail})", flush=True)
         return model
 
     def transcribe(self, audio_f32: np.ndarray) -> str:
