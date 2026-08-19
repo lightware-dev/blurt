@@ -141,7 +141,7 @@ WHISPER_MODEL=openai/whisper-large-v3 WHISPER_LANGUAGE=ja ./blurtd --engine whis
 | Model | `nvidia/parakeet-tdt-0.6b-v3` | `openai/whisper-large-v3-turbo` (any Hub checkpoint via `WHISPER_MODEL`) |
 | Params / VRAM | 0.6 B, ~1.4 GB bf16 | 0.8 B, ~1.6 GB bf16 |
 | Languages | 25, European | ~100 |
-| Precisions | bf16, fp16, [nvfp4](#tight-on-vram--nvfp4) | bf16, fp16 |
+| Precisions | bf16, fp16, 4-bit [nvfp4](#tight-on-vram--nvfp4) | bf16, fp16, 4-bit [nf4](#whisper-on-a-small-card--nf4) |
 | Speed | faster (a TDT decoder emits several frames per step) | slower, still well inside realtime for dictation |
 | Extras | — | `WHISPER_TASK=translate` writes English from any input |
 
@@ -167,8 +167,10 @@ Parakeet is much less prone to it, and the defaults were tuned on Parakeet.
 Language detection is per dictation and automatic on both engines. On Whisper it
 runs off the first window, which is where it goes wrong on a short, noisy start —
 pin `WHISPER_LANGUAGE=en` if you always dictate in one language. `WHISPER_DTYPE`
-is the fp16 escape hatch for pre-Ampere cards, exactly like `PARAKEET_DTYPE`
-below; there is no 4-bit option for Whisper.
+takes the same three kinds of value `PARAKEET_DTYPE` does — bf16, fp16 for
+pre-Ampere cards, and a 4-bit option — though the 4-bit *format* differs between
+the engines for measured reasons: [nvfp4](#tight-on-vram--nvfp4) for Parakeet,
+[nf4](#whisper-on-a-small-card--nf4) for Whisper.
 
 #### Pre-Ampere GPUs — fp16
 
@@ -251,6 +253,59 @@ not have quantized the model itself. Rebuild it with
 GPU and a calibration corpus from `scripts/make_eval_corpus.py`); `--verify`
 reloads the result and requires it to reproduce the transcripts it was built with,
 exactly.
+
+#### Whisper on a small card — nf4
+
+`WHISPER_DTYPE=nf4` runs the Whisper engine's weights in **NF4**, bitsandbytes'
+4-bit format. Activations stay bf16, so like nvfp4 this needs an Ampere-or-newer
+card.
+
+```bash
+WHISPER_DTYPE=nf4 ./blurtd --engine whisper
+```
+
+**It cuts weights by two thirds and costs 1.7x the latency.** Measured on the
+same 208-clip corpus as the tables above (25.8 min: 100 LibriSpeech test-clean
+utterances, 25 of them degraded four ways, 8 synthetic), decoding
+`whisper-large-v3-turbo` on an RTX 5090:
+
+| | WER, all 208 | vs bf16 | VRAM (weights / peak) | Decode latency, median |
+|---|---|---|---|---|
+| bf16 | 4.64% | — | 1.62 / 1.70 GB | 111 ms |
+| nf4 | 4.36% | −0.28 pp, 95% CI [−0.95, +0.31] | 0.53 / 0.61 GB | 184 ms |
+
+The WER difference is not significant (p=0.39) — nf4 is *not* better than bf16,
+the corpus cannot tell them apart, and at 208 clips it could not resolve a gap
+below about 0.5 pp anyway. It changes the exact text of 18% of clips while
+leaving the aggregate alone, produced no empty transcripts, and produced none of
+the runaway filler Whisper is prone to. Both numbers are higher than Whisper's
+published test-clean WER because a third of this corpus is deliberately degraded
+audio and the normalisation is this repo's, not OpenAI's; the comparison is
+paired on identical clips, so that offset cancels.
+
+Unlike Parakeet's nvfp4, there is **no snapshot to build**. bitsandbytes
+quantizes layer by layer as the checkpoint streams out of the HuggingFace cache,
+peaking at 0.81 GB — the full bf16 model never exists, on the GPU or off it. So
+there is no calibration corpus, no pre-quantized download, and no extra start-up
+cost: loading takes 7.8 s against bf16's 6.3 s.
+
+**Why NF4 here and NVFP4 there.** NVFP4 was measured on this same corpus for
+Whisper too, alongside INT4-AWQ and NVFP4-AWQ. All four formats hold WER within
+noise and all four land at 0.53–0.60 GB of weights, so accuracy and memory do
+not decide it — latency does: the three nvidia-modelopt formats all cost **4.1x**
+decode latency against NF4's 1.7x, because they unpack each weight back to bf16
+and call an ordinary GEMM where bitsandbytes fuses the dequantization into its
+matmul. Parakeet does not pay that penalty (its encoder is bound by kernel
+launches, not arithmetic — a 2 s clip and a 36 s clip both take ~27 ms), which is
+why nvfp4 is the right trade there and the wrong one here. The modelopt formats
+would additionally need the whole snapshot format built a second time, since
+quantizing in-process peaks at 1.8 GB — above the bf16 model it replaces.
+
+At RTF 0.034, nf4 still decodes ~29x faster than realtime. The cost you can feel
+is on a long dictation: a 36 s segment takes 0.49 s in bf16 and 0.76 s in nf4
+(against 2.0 s in nvfp4). Reproduce any of this with
+`python scripts/compare_whisper_quant.py --corpus <eval> --calib <calib>`, both
+corpora from `scripts/make_eval_corpus.py`.
 
 Config (env or `.env`, all optional): `BLURT_ASR_ENGINE`, `PARAKEET_DTYPE`, `PARAKEET_BF16_CKPT`,
 `PARAKEET_FP16_CKPT`, `PARAKEET_NVFP4_SNAPSHOT`, `PARAKEET_REPO`,
@@ -530,7 +585,9 @@ clients/mac/       Swift menu-bar app + build-app.sh + notarize.sh
 clients/windows/   .NET 8 / WPF tray app + Blurt.csproj
 www/               marketing site (Next.js) for blurtvoice.com
 static/            browser mic test page (index.html, pcm-worklet.js)
-scripts/           verify_asr.py, ws_client_test.py, generate_samples.py, gen_certs.sh
+scripts/           verify_asr.py, ws_client_test.py, generate_samples.py, gen_certs.sh,
+                   make_eval_corpus.py + compare_precision.py / compare_whisper_quant.py
+                   (the WER / VRAM / latency measurements quoted above)
 audio/             sample wavs
 certs/             self-signed TLS for wss:// (git-ignored; run scripts/gen_certs.sh)
 Dockerfile         GPU container for blurtd (torch cu130 + NeMo)

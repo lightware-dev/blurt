@@ -1135,15 +1135,22 @@ async def suite_engine(_app):
         check("whisper dtype aliases resolve",
               [whisper.resolve_precision(x) for x in ("fp16", "float16", "half", "BF16", None)]
               == ["fp16", "fp16", "fp16", "bf16", "bf16"])
-        # 4-bit is a Parakeet-only path (it needs a calibrated snapshot); Whisper
-        # must reject it rather than silently fall back to a half precision.
+        check("whisper nf4 aliases resolve",
+              [whisper.resolve_precision(x) for x in ("nf4", "NF4", " 4bit ", "int4")]
+              == ["nf4"] * 4)
+        # Each engine has its own 4-bit format and they are not interchangeable:
+        # nvfp4 needs a calibrated snapshot Whisper has none of. Naming the wrong
+        # one must fail loudly rather than fall back to a half precision, which
+        # would silently use 3x the VRAM the config asked for.
         rejected = 0
-        for bad_dtype in ("nvfp4", "int4", "fp32"):
+        for bad_dtype in ("nvfp4", "fp32", "int8"):
             try:
                 whisper.resolve_precision(bad_dtype)
             except ValueError:
                 rejected += 1
         check("whisper rejects precisions it does not have", rejected == 3)
+        check("whisper nf4 describes itself as 4-bit",
+              "nf4" in whisper.WhisperASR(precision="nf4").description)
         check("whisper language aliases mean auto",
               [whisper.resolve_language(x) for x in ("", "auto", "AUTO", None, " en ")]
               == [None, None, None, None, "en"])

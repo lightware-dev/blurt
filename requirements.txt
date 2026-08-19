@@ -229,6 +229,13 @@ audioread==3.1.0 \
     # via
     #   lhotse
     #   librosa
+bitsandbytes==0.50.1 \
+    --hash=sha256:55ec205fa7073bbe680f905b16d66666be4b4cf7e85ab3d28b5d39d73f153db6 \
+    --hash=sha256:5bac232206d9568fb560db566b522e230af95ba3fb833a1023744625c66f1d6b \
+    --hash=sha256:649b4348c24c05c406a3b8fa9ed6ea00ffecb9dc93dcf838af1a2783844bf3e3 \
+    --hash=sha256:86f76e8a3278fbbfc3fa0d79d1c4e706ebc214babd57f0ea30e2da509bbdaad5 \
+    --hash=sha256:b79489c5067e187b37a044faa567d9affa8ad75f690f6cd4b8712005789c5365
+    # via -r requirements.in
 braceexpand==0.1.7 \
     --hash=sha256:91332d53de7828103dcae5773fb43bc34950b0c8160e35e0f44c4427a3b85014 \
     --hash=sha256:e6e539bd20eaea53547472ff94f4fb5c3d3bf9d0a89388c4b56663aba765f705
@@ -2355,6 +2362,7 @@ numpy==2.4.6 \
     # via
     #   -r requirements.in
     #   accelerate
+    #   bitsandbytes
     #   contourpy
     #   datasets
     #   kaldi-python-io
@@ -2455,6 +2463,7 @@ packaging==24.2 \
     --hash=sha256:c228a6dc5e932d346bc5739379109d49e8853dd8223571c7c5b55260edc0b97f
     # via
     #   accelerate
+    #   bitsandbytes
     #   datasets
     #   huggingface-hub
     #   hydra-core
@@ -4057,6 +4066,7 @@ transformers==4.57.6 \
     --hash=sha256:4c9e9de11333ddfe5114bc872c9f370509198acf0b87a832a0ab9458e2bd0550 \
     --hash=sha256:55e44126ece9dc0a291521b7e5492b572e6ef2766338a610b9ab5afbb70689d3
     # via
+    #   -r requirements.in
     #   nemo-toolkit
     #   peft
 typeguard==4.6.0 \
