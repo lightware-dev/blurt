@@ -49,12 +49,6 @@ MAX_SECTION_BYTES = 16 * 1024 * 1024
 IDLE_TIMEOUT_S = 600.0
 
 # Languages of parakeet-tdt-0.6b-v3, for Home Assistant's language picker.
-LANGUAGES = [
-    "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu",
-    "it", "lt", "lv", "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk",
-]
-
-
 # ---- framing ------------------------------------------------------------
 
 def _encode(etype: str, data: dict | None = None, payload: bytes = b"") -> bytes:
@@ -126,24 +120,24 @@ def _info_data() -> dict:
     from server.app import asr, SERVER_VERSION
 
     attribution = {"name": "Blurt", "url": "https://blurtvoice.com"}
+    # Everything about the model comes off the engine (server/engine.py), so
+    # Home Assistant's picker shows what is actually loaded — including the
+    # languages, which differ sharply between the two engines.
     return {
         "asr": [{
             "name": "blurt",
-            "description": "Blurt — local Parakeet dictation server",
+            "description": f"Blurt — local dictation server ({asr.engine})",
             "attribution": attribution,
             "installed": True,
             "version": SERVER_VERSION,
             "supports_transcript_streaming": True,
             "models": [{
                 "name": asr.model_name,
-                "description": "NVIDIA Parakeet TDT 0.6B v3 (bf16)",
-                "attribution": {
-                    "name": "NVIDIA",
-                    "url": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
-                },
+                "description": asr.description,
+                "attribution": asr.attribution,
                 "installed": True,
-                "version": "3",
-                "languages": LANGUAGES,
+                "version": asr.model_version,
+                "languages": list(asr.languages),
             }],
         }],
     }

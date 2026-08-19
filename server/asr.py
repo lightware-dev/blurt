@@ -84,6 +84,14 @@ PRECISIONS = {
 }
 DEFAULT_PRECISION = "bf16"
 
+# What parakeet-tdt-0.6b-v3 was trained on, for the Wyoming `info` message (Home
+# Assistant lists these in its STT picker). Lives with the engine rather than
+# with the listener because the Whisper engine advertises its own, longer list.
+LANGUAGES = [
+    "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu",
+    "it", "lt", "lv", "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk",
+]
+
 # Accepted spellings of each precision, so PARAKEET_DTYPE takes the obvious names.
 _PRECISION_ALIASES = {
     "bf16": "bf16", "bfloat16": "bf16",
@@ -111,7 +119,16 @@ class ParakeetASR:
     one model instance, so a single lock guards it. Callers should run
     `transcribe` in a worker thread (asyncio.to_thread) to keep the event loop
     free.
+
+    One of the two interchangeable engines (see server/engine.py); the other is
+    server/whisper.py.
     """
+
+    engine = "parakeet"
+    attribution = {"name": "NVIDIA",
+                   "url": f"https://huggingface.co/{MODEL_ID}"}
+    languages = LANGUAGES
+    model_version = "3"
 
     def __init__(self, precision: str | None = None):
         self.model_name = MODEL_ID
@@ -127,6 +144,11 @@ class ParakeetASR:
     def is_loaded(self) -> bool:
         """True once the model is resident and decodes will not block on a load."""
         return self._model is not None
+
+    @property
+    def description(self) -> str:
+        """Human-readable model line, for the Wyoming `info` message."""
+        return f"NVIDIA Parakeet TDT 0.6B v3 ({self.precision})"
 
     def ckpt_path(self) -> str:
         """Where the pre-built checkpoint for this precision lives.

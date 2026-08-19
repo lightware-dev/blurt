@@ -47,9 +47,21 @@ def check(name: str, ok: bool, detail: str = ""):
 # ---- stubs ---------------------------------------------------------------
 
 class FakeASR:
-    """Stands in for ParakeetASR: deterministic text, ~one word per 0.5 s."""
+    """Stands in for a real engine: deterministic text, ~one word per 0.5 s.
 
+    Carries the whole engine surface from server/engine.py, not just what the
+    decode path touches: the Wyoming `info` message reports the model's
+    description, attribution, languages and version off the engine, so a stub
+    missing them fails that suite with an AttributeError rather than a diff.
+    """
+
+    engine = "fake"
     model_name = "fake/parakeet"
+    description = "Fake ASR (test stub)"
+    attribution = {"name": "Blurt", "url": "https://blurtvoice.com"}
+    languages = ["en"]
+    model_version = "0"
+    precision = "bf16"
     fail = False
 
     @property
@@ -69,6 +81,46 @@ class FakeASR:
 
     def load(self):
         return self
+
+
+def _rigged_whisper(asr):
+    """Give a WhisperASR stub internals so transcribe() runs without transformers.
+
+    load() returns early once a model is set, so filling in the three attributes
+    it would have populated is enough to exercise the real decode path — the
+    branch on audio length, the arguments each branch builds, and the text
+    extraction — with nothing downloaded and no GPU.
+    """
+    import contextlib as _ctx
+
+    proc_calls, gen_calls = [], []
+
+    class _Inputs(dict):
+        def to(self, *a, **k):
+            return self               # BatchFeature.to casts in place; we only need the mapping
+
+    class _Processor:
+        def __call__(self, audio, **kw):
+            proc_calls.append(kw)
+            return _Inputs(input_features="F")
+
+        def batch_decode(self, ids, skip_special_tokens=True):
+            return ["  hello world  "]   # leading/trailing space is what Whisper emits
+
+    class _Model:
+        def generate(self, **kw):
+            gen_calls.append(kw)
+            return ["ids"]
+
+    class _Torch:
+        @staticmethod
+        @_ctx.contextmanager
+        def inference_mode():
+            yield
+
+    asr._model, asr._processor, asr._torch, asr.dtype = _Model(), _Processor(), _Torch(), "dt"
+    asr.proc_calls, asr.gen_calls = proc_calls, gen_calls
+    return asr
 
 
 class FakeVAD:
@@ -824,7 +876,7 @@ async def suite_interop(app):
         print("  skip  interop suite (pip install wyoming)")
         return
 
-    from server.wyoming import start_wyoming, LANGUAGES
+    from server.wyoming import start_wyoming
 
     server = await start_wyoming("127.0.0.1", WY_PORT)
     try:
@@ -836,8 +888,12 @@ async def suite_interop(app):
             check("asr program advertises streaming",
                   program.name == "blurt" and program.installed
                   and getattr(program, "supports_transcript_streaming", False) is True)
+            # The language list now comes off the loaded engine (Parakeet's 25,
+            # Whisper's ~100, or one if WHISPER_LANGUAGE pins it), so this checks
+            # the round trip against what the engine actually advertises.
+            import server.app as app_mod
             check("model languages round-trip",
-                  len(program.models[0].languages) == len(LANGUAGES))
+                  list(program.models[0].languages) == list(app_mod.asr.languages))
 
         async with AsyncTcpClient("127.0.0.1", WY_PORT) as client:
             await client.write_event(Transcribe(language="en").event())
@@ -1004,8 +1060,185 @@ async def suite_precision(_app):
 
 # ---- runner --------------------------------------------------------------
 
+# ---- engine selection ----------------------------------------------------
+
+async def suite_engine(_app):
+    """BLURT_ASR_ENGINE picks the engine; Parakeet stays the default.
+
+    Pure config, like the precision suite, so it runs with neither a GPU nor
+    torch: it guards the things a second engine can plausibly break — a stray
+    env var moving the default server off Parakeet, the two engines drifting out
+    of interface parity behind the single `asr` global, or Whisper quietly
+    accepting a Parakeet-only precision and loading something nobody asked for.
+    """
+    import importlib.util   # .util for the torch probe below; also binds importlib
+    import os
+
+    import server.engine as engine
+    import server.asr as parakeet
+    import server.whisper as whisper
+
+    saved = {k: os.environ.get(k) for k in
+             ("BLURT_ASR_ENGINE", "WHISPER_MODEL", "WHISPER_DTYPE",
+              "WHISPER_LANGUAGE", "WHISPER_TASK", "PARAKEET_DTYPE")}
+    try:
+        for k in saved:
+            os.environ.pop(k, None)
+        engine = importlib.reload(engine)
+        whisper = importlib.reload(whisper)
+
+        check("default engine is parakeet", engine.resolve_engine(None) == "parakeet"
+              and engine.create_asr().engine == "parakeet")
+        check("engine aliases resolve",
+              [engine.resolve_engine(x) for x in ("whisper", "OpenAI", "nemo", "Parakeet", "")]
+              == ["whisper", "whisper", "parakeet", "parakeet", "parakeet"])
+        bad = False
+        try:
+            engine.resolve_engine("wav2vec")
+        except ValueError:
+            bad = True
+        check("unknown engine rejected", bad)
+
+        check("create_asr builds the requested engine",
+              engine.create_asr("whisper").engine == "whisper"
+              and isinstance(engine.create_asr("whisper"), whisper.WhisperASR)
+              and isinstance(engine.create_asr("parakeet"), parakeet.ParakeetASR))
+
+        os.environ["BLURT_ASR_ENGINE"] = "whisper"
+        check("BLURT_ASR_ENGINE switches the engine",
+              engine.create_asr().engine == "whisper")
+        check("explicit argument beats the env var",
+              engine.create_asr("parakeet").engine == "parakeet")
+        os.environ.pop("BLURT_ASR_ENGINE")
+
+        # Interface parity: server/app.py holds one of these through a single
+        # global and never learns which, so anything one engine grows and the
+        # other doesn't is a runtime AttributeError in whichever listener reads it.
+        surface = ("engine", "model_name", "description", "attribution", "languages",
+                   "model_version", "precision", "dtype", "is_loaded", "load",
+                   "transcribe", "release_cache", "torch_dtype")
+        engines = [parakeet.ParakeetASR(), whisper.WhisperASR()]
+        missing = {f"{e.engine}.{a}" for e in engines for a in surface if not hasattr(e, a)}
+        check("engines expose the same surface", not missing, detail=str(sorted(missing)))
+        check("neither engine starts out loaded",
+              not any(e.is_loaded for e in engines))
+        check("engines decline empty audio without loading a model",
+              [e.transcribe(np.zeros(0, dtype=np.float32)) for e in engines] == ["", ""]
+              and not any(e.is_loaded for e in engines))
+
+        # ---- whisper configuration ----
+        w = whisper.WhisperASR()
+        check("whisper defaults to large-v3-turbo in bf16",
+              w.model_name == "openai/whisper-large-v3-turbo" and w.precision == "bf16")
+        check("whisper auto-detects language by default",
+              w.language is None and w.task == "transcribe")
+        check("whisper dtype aliases resolve",
+              [whisper.resolve_precision(x) for x in ("fp16", "float16", "half", "BF16", None)]
+              == ["fp16", "fp16", "fp16", "bf16", "bf16"])
+        # 4-bit is a Parakeet-only path (it needs a calibrated snapshot); Whisper
+        # must reject it rather than silently fall back to a half precision.
+        rejected = 0
+        for bad_dtype in ("nvfp4", "int4", "fp32"):
+            try:
+                whisper.resolve_precision(bad_dtype)
+            except ValueError:
+                rejected += 1
+        check("whisper rejects precisions it does not have", rejected == 3)
+        check("whisper language aliases mean auto",
+              [whisper.resolve_language(x) for x in ("", "auto", "AUTO", None, " en ")]
+              == [None, None, None, None, "en"])
+        bad = False
+        try:
+            whisper.resolve_task("summarize")
+        except ValueError:
+            bad = True
+        check("whisper rejects unknown tasks", bad)
+
+        os.environ.update({"WHISPER_MODEL": "openai/whisper-small",
+                           "WHISPER_DTYPE": "fp16",
+                           "WHISPER_LANGUAGE": "pt",
+                           "WHISPER_TASK": "translate"})
+        w = whisper.WhisperASR()
+        check("whisper env overrides apply",
+              (w.model_name, w.precision, w.language, w.task)
+              == ("openai/whisper-small", "fp16", "pt", "translate"))
+        # A pinned language is a hard setting: audio in anything else comes back
+        # wrong, so Home Assistant must not be told the server takes 99 languages.
+        check("a pinned language is the only one advertised", w.languages == ["pt"])
+        check("auto-detect advertises the full list",
+              len(whisper.WhisperASR(language="auto").languages) > 90)
+        check("whisper describes what is loaded",
+              w.description == "OpenAI Whisper — openai/whisper-small (fp16, pt, translate)"
+              and w.attribution["url"] == "https://huggingface.co/openai/whisper-small")
+        # An English-only checkpoint takes neither a language nor a task token, so
+        # the engine must not offer to serve 99 languages or promise translation.
+        en_only = whisper.WhisperASR(model="openai/whisper-small.en", language="pt",
+                                     task="translate")
+        check("english-only checkpoints advertise english alone",
+              en_only.multilingual is False and en_only.languages == ["en"]
+              and "translate" not in en_only.description
+              and whisper.WhisperASR(model="openai/whisper-small").multilingual is True)
+        check("whisper model version comes off the checkpoint name",
+              [whisper.WhisperASR(model=m).model_version for m in
+               ("openai/whisper-large-v3-turbo", "openai/whisper-large-v2", "openai/whisper-small")]
+              == ["3", "2", "1"])
+        # Parakeet must be unmoved by any of the WHISPER_* vars above.
+        check("whisper config does not touch parakeet",
+              parakeet.ParakeetASR().precision == "bf16"
+              and parakeet.ParakeetASR().model_name == "nvidia/parakeet-tdt-0.6b-v3")
+
+        # ---- whisper decode plumbing ----
+        for k in ("WHISPER_MODEL", "WHISPER_DTYPE", "WHISPER_LANGUAGE", "WHISPER_TASK"):
+            os.environ.pop(k, None)   # back to defaults; the overrides above are done
+
+        # Whisper's encoder sees a fixed 30 s window, so anything longer takes
+        # transformers' sequential long-form path — which needs untruncated
+        # features, an attention mask and timestamps, none of which the ordinary
+        # call passes. Getting that branch wrong silently truncates every final
+        # decode of a long dictation at 30 s, so it is checked here with a stubbed
+        # model rather than left to a GPU no CI has.
+        rigged = _rigged_whisper(whisper.WhisperASR())
+        check("short audio decodes in one pass",
+              rigged.transcribe(np.zeros(5 * SR, dtype=np.float32)) == "hello world"
+              and rigged.proc_calls[0] == {"sampling_rate": SR, "return_tensors": "pt"}
+              and rigged.gen_calls[0] == {"input_features": "F", "task": "transcribe"})
+
+        rigged = _rigged_whisper(whisper.WhisperASR(language="pt"))
+        rigged.transcribe(np.zeros(40 * SR, dtype=np.float32))
+        check("long audio takes the long-form path",
+              rigged.proc_calls[0] == {"sampling_rate": SR, "return_tensors": "pt",
+                                       "truncation": False, "padding": "longest",
+                                       "return_attention_mask": True}
+              and rigged.gen_calls[0] == {"input_features": "F", "task": "transcribe",
+                                          "language": "pt", "return_timestamps": True,
+                                          "condition_on_prev_tokens": False})
+
+        # An `.en` checkpoint raises on either argument rather than ignoring it.
+        rigged = _rigged_whisper(whisper.WhisperASR(model="openai/whisper-small.en",
+                                                    language="pt", task="translate"))
+        rigged.transcribe(np.zeros(2 * SR, dtype=np.float32))
+        check("english-only checkpoints get no language or task",
+              rigged.gen_calls[0] == {"input_features": "F"})
+
+        if importlib.util.find_spec("torch") is not None:
+            import torch  # noqa: PLC0415  (guarded by the find_spec above)
+
+            check("whisper dtypes map to torch",
+                  whisper.WhisperASR(precision="fp16").torch_dtype() is torch.float16
+                  and whisper.WhisperASR(precision="bf16").torch_dtype() is torch.bfloat16)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        importlib.reload(whisper)
+        importlib.reload(engine)
+
+
 SUITES = {
     "precision": suite_precision,
+    "engine": suite_engine,
     "pcm": suite_pcm,
     "gate": suite_gate,
     "native": suite_native,

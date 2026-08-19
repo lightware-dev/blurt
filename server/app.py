@@ -1,5 +1,8 @@
 """
-Blurt — Parakeet dictation server. VAD-segmented streaming over WebSocket.
+Blurt — local dictation server. VAD-segmented streaming over WebSocket.
+
+The ASR engine is chosen at startup (BLURT_ASR_ENGINE, default Parakeet; see
+server/engine.py) and is the only model resident in the process.
 
 Protocol (full reference in docs/protocol.md)
 ---------------------------------------------
@@ -28,7 +31,7 @@ The same port as the WebSocket also serves an OpenAI-compatible transcription
 API (server/openai_api.py): POST /v1/audio/transcriptions, GET /v1/models.
 
 Streaming model: the Silero VAD both gates and segments the audio. Only what it
-scores as speech is buffered — Parakeet has no VAD of its own, so background
+scores as speech is buffered — the ASR model has no VAD of its own, so background
 chatter that reaches it comes back as words — and the buffer is split into
 utterances at silences. The active segment is re-decoded every
 ~PARTIAL_INTERVAL_MS for live partials, and committed to the transcript on a
@@ -54,7 +57,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from server.asr import ParakeetASR, SAMPLE_RATE
+from server.asr import SAMPLE_RATE
+from server.engine import create_asr
 from server.pcm import PcmConverter, UnsupportedFormat
 
 # ---- config -------------------------------------------------------------
@@ -111,7 +115,11 @@ MAX_QUEUED_FRAMES = int(os.getenv("MAX_QUEUED_FRAMES", "4096"))
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 
-asr = ParakeetASR()
+# The one ASR engine this process serves — Parakeet by default, Whisper with
+# BLURT_ASR_ENGINE=whisper (or `blurtd --engine whisper`, which rebinds this
+# before the model is loaded). Everything below holds it through this global and
+# never learns which engine it got; see server/engine.py for the contract.
+asr = create_asr()
 
 
 def server_info() -> dict:
@@ -372,8 +380,8 @@ class Session:
                         segment.extend(pcm)
                         full.extend(pcm)
                 elif frame:
-                    # Buffer what the VAD kept, not what arrived. Parakeet has
-                    # no VAD of its own, so anything that reaches it becomes
+                    # Buffer what the VAD kept, not what arrived. The ASR model
+                    # has no VAD of its own, so anything that reaches it becomes
                     # words — including a neighbour's conversation the VAD
                     # correctly scored as non-speech.
                     speech = self.vad.process(_f32(frame))

@@ -177,6 +177,9 @@ Asks for a fresh `info` (e.g. to poll whether the model finished loading).
 
 - `protocol` — breaking-change counter. A client built for 2 works with any
   server reporting 2, whatever else got added since.
+- `model` — whichever engine the server was started with, e.g.
+  `openai/whisper-large-v3-turbo` when it runs Whisper. Informational: the
+  protocol is identical either way, and a client should not switch on it.
 - `state` — `ready` when the model is loaded, `loading` before that (first
   dictation will stall until loading finishes; the clients show "Loading
   model…").
@@ -238,8 +241,8 @@ A client that ignores `vad` entirely still works; it just can't tell a quiet
 room from a dead socket.
 
 The same decision also gates what gets transcribed at all: audio the VAD
-rejects is dropped before it reaches the model, since Parakeet has no VAD of
-its own and will turn a neighbour's conversation into words. `VAD_PREROLL_MS`
+rejects is dropped before it reaches the model, since the ASR model has no VAD
+of its own and will turn a neighbour's conversation into words. `VAD_PREROLL_MS`
 of audio before each onset and `VAD_HANGOVER_MS` after each offset are kept
 too — the detector crosses its threshold a beat after a word starts and falls
 below it while the last consonant is still sounding, so gating on the raw
@@ -365,7 +368,7 @@ before the final decode lands.
 
 | Incoming | Behavior |
 |---|---|
-| `describe` | replies with `info` (asr program + Parakeet model + 25 languages) |
+| `describe` | replies with `info` (asr program + the loaded model and the languages it handles — 25 for Parakeet, ~100 for Whisper) |
 | `transcribe` | accepted; the language hint is ignored (the model auto-detects) |
 | `audio-start` | begins a dictation |
 | `audio-chunk` | PCM payload; `rate`/`width`/`channels` honored via the same converter as the native protocol (a chunk before `audio-start` implicitly starts) |
