@@ -29,29 +29,26 @@ services:
       # Serves wss:// out of the box via an auto-generated cert. Mount your own
       # here to override it (see scripts/gen_certs.sh):
       # - ./certs:/app/certs:ro
-    environment:
-      # See .env.example for the full list. A few common ones:
-      # BLURT_ASR_ENGINE: whisper   # run Whisper instead of Parakeet (one or the
-      #                             # other — see .env.example for WHISPER_MODEL,
-      #                             # WHISPER_DTYPE, WHISPER_LANGUAGE)
-      # AUTH_TOKEN: changeme    # require ?token=… on the ws connection
-      # BLURT_AUTOCERT: "0"     # disable the auto cert, fall back to plain ws://
-      # LOG_STATS: "0"          # silence per-dictation stats (packets/bytes/duration)
-      HOST: 0.0.0.0
-      PORT: "25878"
-      # WYOMING_PORT: "10300"   # enable the Wyoming (Home Assistant STT) listener
-      # WYOMING_HOST: 0.0.0.0   # narrow the Wyoming bind without moving the WebSocket
-      # MAX_UPLOAD_MB: "200"    # /v1/audio/transcriptions upload ceiling
-      # Host-RAM tuning. The Dockerfile ships sensible defaults (MALLOC_ARENA_MAX=2
-      # and *_NUM_THREADS=2) that cut idle RSS by ~1 GB on a GPU box — see the
-      # "Host-RAM tuning" note in the Dockerfile for why. Values set here override
-      # those defaults, so uncomment and raise them if you run blurtd CPU-only or
-      # want more CPU parallelism (at the cost of more resident memory):
-      # MALLOC_ARENA_MAX: "2"        # glibc malloc arenas; higher = more RAM, less lock contention
-      # OMP_NUM_THREADS: "2"         # torch/OpenMP CPU intra-op threads
-      # MKL_NUM_THREADS: "2"         # Intel MKL BLAS threads
-      # NUMEXPR_NUM_THREADS: "2"     # numexpr (pandas/librosa) threads
-      # NUMBA_NUM_THREADS: "2"       # numba JIT (librosa resample) threads
+    # All server config comes from a local `.env` (gitignored) — copy
+    # `.env.example` to `.env` and uncomment what you need. It is optional: with
+    # no `.env` the daemon runs its own defaults, which is the stock Parakeet
+    # server on 0.0.0.0:25878.
+    #
+    #   BLURT_ASR_ENGINE=whisper   run Whisper instead of Parakeet (one or the
+    #                              other; see WHISPER_MODEL, WHISPER_DTYPE,
+    #                              WHISPER_LANGUAGE, WHISPER_TASK)
+    #   AUTH_TOKEN=changeme        require ?token=… on the ws connection
+    #   WYOMING_PORT=10300         enable the Wyoming (Home Assistant STT) listener
+    #   HOST=…  PORT=…             move the bind (the published port above is
+    #                              fixed at 25878, so change both together)
+    #
+    # The Dockerfile also ships host-RAM defaults (MALLOC_ARENA_MAX=2 and
+    # *_NUM_THREADS=2) that cut idle RSS by ~1 GB on a GPU box — see the
+    # "Host-RAM tuning" note there. Setting them in `.env` overrides those, so
+    # raise them if you run blurtd CPU-only or want more CPU parallelism.
+    env_file:
+      - path: .env
+        required: false
     # The host resolves DNS via systemd-resolved's loopback stub (127.0.0.53),
     # which isn't reachable from inside a container — so set a real resolver here
     # or model downloads from huggingface.co fail with "name resolution" errors.
