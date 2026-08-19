@@ -21,12 +21,45 @@ const RIVALS = [
 // Names we seriously considered before picking the honest one.
 const REJECTED = ['Trill', 'Loqui', 'Parley', 'Sotto', 'Utter']
 
+// The two ASR engines. Figures are measured, not vendor-quoted — see STATS.
+const ENGINES: {
+    name: string
+    tag: string
+    p: string
+    specs: [string, string][]
+}[] = [
+    {
+        name: 'Parakeet',
+        tag: 'default',
+        p: 'NVIDIA’s parakeet-tdt-0.6b-v3. The fast one, and the more accurate one on the languages it covers. Its decoder emits several frames per step, so long clips barely cost more than short ones.',
+        specs: [
+            ['languages', '25, European'],
+            ['word error rate', '2.99%'],
+            ['typical dictation', '~75 ms'],
+            ['vram', '1.4 GB · 0.5 GB in 4-bit'],
+        ],
+    },
+    {
+        name: 'Whisper',
+        tag: '--engine whisper',
+        p: 'OpenAI’s whisper-large-v3-turbo, for the four-times-wider language list — detected per dictation, no setting to flip. It can also translate: talk in one language, get English typed.',
+        specs: [
+            ['languages', '~100, auto-detected'],
+            ['word error rate', '4.64%'],
+            ['typical dictation', '~111 ms'],
+            ['vram', '1.7 GB · 0.6 GB in 4-bit'],
+        ],
+    },
+]
+
+// Measured on an RTX 5090 over the repo's 208-clip corpus (25.8 min), default
+// engine unless noted. Latency is a whole transcribe() call, not encoder-only.
 const STATS = [
-    { big: '~70ms', small: 'to transcribe a 35-second clip' },
-    { big: '~2.3 GB', small: 'VRAM. your GPU won’t notice.' },
+    { big: '~75ms', small: 'to transcribe a typical dictation' },
+    { big: '0.5 GB', small: 'VRAM in 4-bit (1.4 GB in bf16)' },
     { big: '0 bytes', small: 'leave your network' },
     { big: '$0/mo', small: 'forever. it’s just code.' },
-    { big: '25', small: 'languages (incl. 🇬🇧 + 🇵🇹)' },
+    { big: '~100', small: 'languages on Whisper (25 on Parakeet — 🇬🇧 + 🇵🇹 either way)' },
 ]
 
 function KeyCap({ children }: { children: React.ReactNode }) {
@@ -180,6 +213,12 @@ export default function Home() {
                         We went with the sound your mouth actually makes. Branding is hard;
                         onomatopoeia is free.
                     </p>
+                    <p className="mt-4 max-w-lg text-bone/70">
+                        We didn’t need to name ourselves after Whisper. We just{' '}
+                        <span className="mark font-medium">run it</span> when you want it —{' '}
+                        <code className="font-mono text-sm text-bone">--engine whisper</code>,
+                        ~100 languages, same hotkey, same GPU.
+                    </p>
                 </div>
             </section>
 
@@ -203,7 +242,7 @@ export default function Home() {
                         {
                             k: '02',
                             h: 'It’s stupid fast.',
-                            p: 'NVIDIA Parakeet on an RTX 5090 transcribes a 35-second clip in about 80ms — and any GPU from the 20-series up runs it. Live partials appear as you talk. It finishes before you do.',
+                            p: 'NVIDIA Parakeet on an RTX 5090 turns a normal dictation around in ~75ms, and a 35-second ramble in ~280ms. Any GPU from the 20-series up runs it — there’s an fp16 build for the older cards. Live partials appear as you talk. It finishes before you do.',
                         },
                         {
                             k: '03',
@@ -239,7 +278,7 @@ export default function Home() {
                         {[
                             ['mic', 'mic', '16 kHz PCM16, straight off AVAudioEngine'],
                             ['scissors', 'VAD', 'Silero splits your speech at the pauses'],
-                            ['zap', 'Parakeet', 'GPU re-decodes every ~350ms, low WER'],
+                            ['zap', 'Parakeet', 'or Whisper — GPU re-decodes every ~350ms'],
                             ['cursor', 'your cursor', 'final text pasted into the focused field'],
                         ].map(([icon, title, sub], idx, arr) => (
                             <div key={title} className="flex items-stretch sm:flex-1">
@@ -265,6 +304,54 @@ export default function Home() {
                         not the length of the session. It’ll happily run all day.
                     </p>
                 </div>
+            </section>
+
+            {/* ── engines ─────────────────────────────────────────── */}
+            <section className="mx-auto max-w-5xl px-6 py-20">
+                <h2 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">
+                    Two models. Pick one.
+                </h2>
+                <p className="mt-4 max-w-xl text-bone/70">
+                    One runs at a time — two models resident would double the VRAM this
+                    whole thing exists to keep small. Every client sees the same protocol
+                    either way, so swapping is a restart, not a migration.
+                </p>
+
+                <div className="mt-10 grid gap-5 sm:grid-cols-2">
+                    {ENGINES.map(e => (
+                        <div
+                            key={e.name}
+                            className="flex flex-col rounded-2xl border border-ink-700 bg-ink-900 p-6 transition hover:border-ink-600"
+                        >
+                            <div className="flex items-baseline gap-3">
+                                <h3 className="font-display text-xl font-bold">{e.name}</h3>
+                                <span className="font-mono text-xs text-bone-dim">{e.tag}</span>
+                            </div>
+                            <p className="mt-3 text-sm leading-relaxed text-bone/70">{e.p}</p>
+                            <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-ink-800 pt-5 font-mono text-xs">
+                                {e.specs.map(([k, v]) => (
+                                    <div key={k}>
+                                        <dt className="text-bone-dim">{k}</dt>
+                                        <dd className="mt-0.5 text-bone">{v}</dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        </div>
+                    ))}
+                </div>
+
+                <p className="mt-6 max-w-2xl font-mono text-xs leading-relaxed text-bone-dim">
+                    // both take a <span className="text-bone">4-bit</span> option when the
+                    card is the constraint — same word error rate on our corpus, roughly a
+                    third of the weights, and slower per word. Parakeet uses NVFP4, Whisper
+                    uses NF4; the formats differ because we measured both on each and they
+                    lose differently.
+                </p>
+                <p className="mt-2 max-w-2xl font-mono text-xs leading-relaxed text-bone-dim">
+                    // numbers measured on an RTX 5090 over 208 clips / 25.8 min —
+                    LibriSpeech read speech, the same clips degraded with noise, and a
+                    handful of synthetic ones. Your mileage, your microphone.
+                </p>
             </section>
 
             {/* ── meet blurtd ─────────────────────────────────────── */}
@@ -310,7 +397,7 @@ export default function Home() {
                         {'\n'}
                         {'    '}Tasks: 1 (listening)
                         {'\n'}
-                        {'   '}Memory: 2.3G
+                        {'   '}Memory: 1.4G <span className="text-bone-dim">(0.5G if you ask for 4-bit)</span>
                         {'\n'}
                         {'   '}Egress:{' '}
                         <span className="text-bone">
