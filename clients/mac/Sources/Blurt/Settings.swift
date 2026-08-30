@@ -5,6 +5,33 @@ import Carbon
 enum Settings {
     private static let d = UserDefaults.standard
 
+    /// Which engine transcribes. `server` streams to blurtd (the default, and
+    /// the only option on a Mac that can't transcribe locally); `local` uses
+    /// macOS's own on-device analyzer.
+    enum Engine: String {
+        case server
+        case local
+    }
+
+    static var engine: Engine {
+        get {
+            let stored = Engine(rawValue: d.string(forKey: "engine") ?? "") ?? .server
+            // A Mac that can't run the local engine always reads back `.server`,
+            // so a preference carried over from an Apple silicon Mac — restored
+            // from a backup, or synced — can't strand this one on an engine it
+            // has no way to run.
+            return stored == .local && LocalTranscription.isSupported ? .local : .server
+        }
+        set { d.set(newValue.rawValue, forKey: "engine") }
+    }
+
+    /// The locale the local engine settled on, recorded so it's visible in the
+    /// preferences rather than being an invisible guess. Written by LocalEngine.
+    static var localeIdentifier: String {
+        get { d.string(forKey: "localeIdentifier") ?? "" }
+        set { d.set(newValue, forKey: "localeIdentifier") }
+    }
+
     static var serverURL: String {
         get { d.string(forKey: "serverURL") ?? "wss://localhost:25878/ws" }
         set { d.set(newValue, forKey: "serverURL") }

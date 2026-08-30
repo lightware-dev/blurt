@@ -20,7 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastDictation: String?
 
     private let audio = AudioCapture()
-    private let client = DictationClient()
+    /// Whatever is turning speech into text right now — the server over a
+    /// WebSocket, or macOS's own analyzer. Rebuilt (and rewired) when the
+    /// preference changes; never swapped mid-dictation.
+    private var engine: TranscriptionEngine = AppDelegate.makeEngine()
     private let hud = HUD()
     private var recording = false
     // True while a certificate pre-flight is in flight, so a second trigger can't
@@ -31,16 +34,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // starts a dictation behind the dialog telling you it's down — and stacks a
     // second copy of that dialog when it fails too.
     private var alerting = false
-    // Live protocol state for the HUD: the latest structured partial, whether the
-    // server's VAD currently hears speech, and whether the model is still loading.
+    // Live state for the HUD: the latest structured partial, whether the active
+    // engine's VAD currently hears speech, and whether the model is still loading.
     private var partialCommitted = ""
     private var partialLive = ""
-    private var serverHearing = false
-    private var serverLoading = false
-    // Whether the server has said anything on this connection. Until it has,
+    private var engineHearing = false
+    private var engineLoading = false
+    // Whether the active engine has confirmed it can transcribe. Until it has,
     // the HUD must not claim to be listening: the mic is live, but nothing is
     // receiving it.
-    private var serverAcked = false
+    private var engineAcked = false
     // The last thing we learned about whether the server answers at all — from
     // a certificate pre-flight or a dictation. Nil until something has tried.
     // Drives the menu bar, so a dead daemon is visible *before* the hotkey is
@@ -49,10 +52,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboarding: OnboardingWindowController?
     private var settingsWindow: SettingsWindowController?
 
+    /// Build the engine the preference asks for. `Settings.engine` already
+    /// refuses to return `.local` on a Mac that can't run it, so this needs no
+    /// capability check of its own.
+    private static func makeEngine() -> TranscriptionEngine {
+        if Settings.engine == .local, #available(macOS 26, *) {
+            return LocalEngine()
+        }
+        return DictationClient()
+    }
+
+    /// Swap in the engine the preference now names, and rewire the callbacks
+    /// onto it. Tears the old one down first, so a switch mid-dictation can't
+    /// leave a socket open or an analyzer running.
+    private func rebuildEngine() {
+        engine.close()
+        engine = Self.makeEngine()
+        wire()
+        // The old engine's picture of the world doesn't carry over: a dimmed
+        // icon from a dead blurtd shouldn't survive a switch to local.
+        serverReachable = nil
+        updateIcon()
+        updateServerDownItem()
+        engine.prewarm()
+        checkServerCertificate()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         wire()
         applyShortcut()
+        // Load the on-device model now rather than making the first dictation
+        // wait for it. No-op for the server engine.
+        engine.prewarm()
         // Show the first-run permissions screen until the user has seen it *and*
         // Accessibility is actually granted (without it Blurt can't type anything).
         if !Settings.didOnboard || !AXIsProcessTrusted() {
@@ -71,6 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `preflighting` for the duration — otherwise a trigger during the dialog
     /// would start recording behind it.
     private func checkServerCertificate() {
+        // Nothing to trust when transcription never leaves this Mac.
+        guard Settings.engine == .server else { return }
         preflighting = true
         CertTrust.preflight(Settings.serverURL) { [weak self] outcome in
             guard let self else { return }
@@ -156,14 +190,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.contentTintColor = nil
         // Faded while the server is known to be down — the same "connected or
         // not" idiom every other sync-something-to-a-server menu bar app uses.
-        // Never while recording: the coral mark has to stay unambiguous.
-        let down = !recording && serverReachable == false
+        // Never while recording: the coral mark has to stay unambiguous. Never
+        // in local mode either: there is no server, so a stale blurtd being off
+        // says nothing about whether Blurt can transcribe.
+        let down = !recording && serverReachable == false && Settings.engine == .server
         button.alphaValue = down ? 0.4 : 1
         button.toolTip = down ? "Blurt — can't reach \(Self.serverLabel())" : "Blurt"
     }
 
     private func updateServerDownItem() {
-        let down = serverReachable == false
+        let down = serverReachable == false && Settings.engine == .server
         serverDownItem?.title = "Can't reach \(Self.serverLabel())"
         serverDownItem?.isHidden = !down
         serverDownSeparator?.isHidden = !down
@@ -172,51 +208,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: wiring
 
     private func wire() {
-        audio.onFrame = { [weak self] data in self?.client.sendAudio(data) }
+        audio.onFrame = { [weak self] buffer in self?.engine.sendAudio(buffer) }
         audio.onSpectrum = { [weak self] bands in self?.hud.spectrum(bands) }
-        // The server's first word. Only now is the HUD entitled to say it's
-        // listening, and only now do we know the daemon is up.
-        client.onConnected = { [weak self] in
-            self?.serverAcked = true
+        // The engine's first sign of life — the server's first message, or the
+        // analyzer coming up. Only now is the HUD entitled to say it's
+        // listening, and only now do we know a server (if any) is up.
+        engine.onConnected = { [weak self] in
+            self?.engineAcked = true
             self?.setServerReachable(true)
             self?.renderHUD()
         }
-        client.onPartial = { [weak self] committed, live in
+        engine.onPartial = { [weak self] committed, live in
             self?.partialCommitted = committed
             self?.partialLive = live
-            self?.serverLoading = false   // text proves the model is up
+            self?.engineLoading = false   // text proves the model is up
             self?.renderHUD()
         }
-        // Server-side VAD: before any text arrives, flip the placeholder to
-        // "Hearing you…" — end-to-end confirmation that mic → network → server
-        // is alive (the waveform only proves the local mic works).
-        client.onVad = { [weak self] speech in
-            self?.serverHearing = speech
+        // Engine-side VAD (the server's, or SpeechDetector's): before any text
+        // arrives, flip the placeholder to "Hearing you…" — confirmation that
+        // the whole path is alive, where the waveform only proves the mic is.
+        engine.onVad = { [weak self] speech in
+            self?.engineHearing = speech
             // `info` is a one-shot snapshot taken at connect; if it said
             // "loading", nothing else would ever clear it and the placeholder
             // would outrank "Hearing you…" for the whole dictation. Any event
             // from the pipeline proves loading is done.
-            self?.serverLoading = false
+            self?.engineLoading = false
             // The placeholder only renders before the first word arrives, so
             // the meter is what carries this state for the rest of the
             // dictation.
             self?.hud.hearing(speech)
             self?.renderHUD()
         }
-        client.onInfo = { [weak self] state, _ in
-            self?.serverLoading = (state == "loading")
+        engine.onInfo = { [weak self] state, _ in
+            self?.engineLoading = (state == "loading")
             self?.renderHUD()
         }
-        client.onFinal = { [weak self] text in
+        engine.onFinal = { [weak self] text in
             self?.hud.hide()
-            self?.client.close()
+            self?.engine.close()
             if !text.isEmpty {
                 self?.lastDictation = text
                 self?.copyLastItem?.isEnabled = true
                 TextInjector.inject(text)
             }
         }
-        client.onStatus = { [weak self] state, detail in
+        engine.onStatus = { [weak self] state, detail in
             // The server reports a fatal decode failure (e.g. a wedged CUDA context)
             // as {status: error}. Surface it instead of leaving the HUD stuck on
             // "Listening…" with no text ever arriving.
@@ -226,10 +263,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let first = detail?.split(separator: "\n").first.map(String.init)
             self?.notify("Dictation server error", first ?? "The server could not transcribe. Try again, and restart the server if it persists.")
         }
-        client.onUnreachable = { [weak self] detail in
+        engine.onUnreachable = { [weak self] detail in
             self?.connectionFailed(detail, unreachable: true)
         }
-        client.onFinalizeTimeout = { [weak self] in
+        engine.onFinalizeTimeout = { [weak self] in
             guard let self else { return }
             self.forceStop()
             self.hud.hide()
@@ -249,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             ? "\(Self.serverLabel()) acknowledged the recording but never returned a transcript. Restart blurtd if it persists."
                             : "\(Self.serverLabel()) never returned the finished transcript. What it had transcribed so far is under “Copy Last Dictation” in the menu bar.")
         }
-        client.onError = { [weak self] msg in
+        engine.onError = { [weak self] msg in
             self?.connectionFailed(msg, unreachable: false)
         }
     }
@@ -264,7 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // already in hand, so this needs no second handshake. Reaching this
         // means the certificate changed since the pre-flight; the next
         // trigger connects.
-        if let rejection = client.certRejection {
+        if let rejection = (engine as? DictationClient)?.certRejection {
             hud.hide()
             // Either way this dictation is gone, so say so rather than
             // letting the HUD vanish with no explanation.
@@ -339,6 +376,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // A new server means a new certificate: settle it here rather than
             // letting the next dictation discover it.
             controller.onServerChanged = { [weak self] in self?.checkServerCertificate() }
+            // A different engine means a different object doing the work, so
+            // rebuild rather than trying to reconfigure the live one.
+            controller.onEngineChanged = { [weak self] in self?.rebuildEngine() }
             controller.onCaptureActive = { [weak self] capturing in
                 // Suspend triggers while recording a combo so the active hotkey
                 // can't swallow the keys being typed into the capture well.
@@ -371,12 +411,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// otherwise a placeholder that reflects what the server is actually doing.
     private func renderHUD() {
         guard recording else { return }
-        // "Connecting…" until the server has actually answered. Saying
+        // "Connecting…" until the engine has actually answered. Saying
         // "Listening…" over a socket nobody is on the other end of is the whole
-        // reason a stopped daemon could go unnoticed for a minute at a time.
-        let placeholder = !serverAcked  ? "Connecting…"
-                        : serverLoading ? "Loading model…"
-                        : serverHearing ? "Hearing you…"
+        // reason a stopped daemon could go unnoticed for a minute at a time; the
+        // local engine answers in milliseconds, so this barely shows there.
+        let placeholder = !engineAcked  ? "Connecting…"
+                        : engineLoading ? "Loading model…"
+                        : engineHearing ? "Hearing you…"
                         : "Listening…"
         hud.show(committed: partialCommitted, live: partialLive, placeholder: placeholder)
     }
@@ -395,6 +436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// host is still unsettled — the steady state goes straight to `beginRecording`.
     private func startRecording() {
         guard !recording else { return }
+        guard Settings.engine == .server else { beginRecording(); return }
         guard CertTrust.needsCheck(Settings.serverURL) else { beginRecording(); return }
         preflighting = true
         CertTrust.preflight(Settings.serverURL) { [weak self] outcome in
@@ -412,14 +454,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !recording else { return }
         partialCommitted = ""
         partialLive = ""
-        serverHearing = false
-        serverLoading = false
-        serverAcked = false
-        client.connectAndStart()
+        engineHearing = false
+        engineLoading = false
+        engineAcked = false
+        engine.connectAndStart()
         do {
+            // Each engine names the PCM it wants: the server's declared 16 kHz
+            // Int16, or whatever SpeechAnalyzer asked for.
+            audio.outputFormat = engine.inputFormat
             try audio.start()
         } catch {
-            client.close()
+            engine.close()
             notify("Microphone error", error.localizedDescription)
             return
         }
@@ -438,10 +483,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         cancelKey = nil
         updateIcon()
         audio.stop()
-        client.stop()          // server replies with {final}; onFinal injects + closes
+        engine.stop()          // engine replies with the final text; onFinal injects + closes
     }
 
-    /// Discard the in-flight dictation: stop without asking the server to finalize,
+    /// Discard the in-flight dictation: stop without asking the engine to finalize,
     /// so nothing gets injected. Bound to Esc.
     private func cancel() {
         guard recording else { return }
@@ -454,7 +499,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         cancelKey = nil
         updateIcon()
         audio.stop()
-        client.close()
+        engine.close()
     }
 
     // MARK: helpers
